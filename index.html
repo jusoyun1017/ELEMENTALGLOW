@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ELEMENTAL GLOW</title>
+
+  <!-- Rosarina 폰트 -->
+  <link href="https://fonts.googleapis.com/css2?family=Rosarivo&display=swap" rel="stylesheet">
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+    }
+
+    .logo {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      z-index: 1;
+      font-family: 'Rosarivo', serif;
+      font-size: 72px;
+      color: rgba(70, 80, 100, 0.95);
+      letter-spacing: 6px;
+      opacity: 0;
+      transition: opacity 0.9s ease;
+    }
+
+    .logo.visible {
+      opacity: 1;
+    }
+
+    .btn-start {
+      position: absolute;
+      bottom: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 164px;
+      height: 45px;
+      background: #000;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      z-index: 2;
+      transition: opacity 0.9s ease, transform 0.3s ease;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .btn-start.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .btn-start:hover {
+      transform: translateX(-50%) scale(1.05);
+    }
+
+    @media (max-width: 768px) {
+      .logo {
+        font-size: 48px;
+        letter-spacing: 4px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="rippleCanvas"></canvas>
+  <div class="logo">ELEMENTAL<br>GLOW</div>
+  <button class="btn-start" id="startBtn">START</button>
+
+  <script>
+    const canvas = document.getElementById("rippleCanvas");
+    const ctx = canvas.getContext("2d");
+    let width, height;
+
+    function resizeCanvas() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+
+    const ripples = [];
+
+    function randomColor() {
+      const colors = [
+        'rgba(173, 216, 230, 0.3)',
+        'rgba(255, 182, 193, 0.3)',
+        'rgba(221, 160, 221, 0.3)',
+        'rgba(144, 238, 144, 0.3)',
+        'rgba(255, 228, 181, 0.3)'
+      ];
+      return colors[Math.floor(Math.random() * colors.length)];
+    }
+
+    function createRipple(x, y) {
+      ripples.push({
+        x, y,
+        radius: 0,
+        maxRadius: 200 + Math.random() * 100,
+        color: randomColor(),
+        opacity: 1
+      });
+    }
+
+    document.addEventListener("mousemove", e => {
+      if (Math.random() < 0.2) createRipple(e.clientX, e.clientY);
+    });
+
+    // First click anywhere: reveal logo and show START button
+    let navigating = false;
+    document.addEventListener("click", e => {
+      const logo = document.querySelector('.logo');
+      const btn = document.querySelector('.btn-start');
+      // if logo is not visible yet, show it and create ripples
+      if (!logo.classList.contains('visible')) {
+        for (let i = 0; i < 8; i++) {
+          createRipple(e.clientX + Math.random() * 100 - 50, e.clientY + Math.random() * 100 - 50);
+        }
+        logo.classList.add('visible');
+        // show button after logo fade-in completes
+        setTimeout(() => { if (btn) btn.classList.add('show'); }, 900);
+        return;
+      }
+    });
+
+    // START button click to navigate
+    const startBtn = document.getElementById('startBtn');
+    if (startBtn) {
+      startBtn.addEventListener('click', (e) => {
+        if (navigating) return;
+        navigating = true;
+        e.stopPropagation();
+        // create ripples around button
+        const btnRect = startBtn.getBoundingClientRect();
+        const btnCenterX = btnRect.left + btnRect.width / 2;
+        const btnCenterY = btnRect.top + btnRect.height / 2;
+        for (let i = 0; i < 8; i++) {
+          createRipple(btnCenterX + (Math.random() - 0.5) * 60, btnCenterY + (Math.random() - 0.5) * 60);
+        }
+        setTimeout(() => { window.location.href = 'elements.html'; }, 400);
+      });
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, width, height);
+      ripples.forEach((ripple, i) => {
+        ctx.beginPath();
+        ctx.arc(ripple.x, ripple.y, ripple.radius, 0, Math.PI * 2);
+        ctx.fillStyle = ripple.color;
+        ctx.globalAlpha = ripple.opacity;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        ripple.radius += 1.5;
+        ripple.opacity -= 0.008;
+
+        if (ripple.opacity <= 0) ripples.splice(i, 1);
+      });
+      requestAnimationFrame(draw);
+    }
+    draw();
+  </script>
+</body>
+</html>
