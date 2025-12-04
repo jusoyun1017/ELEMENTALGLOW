@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Elemental Cards</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #f9f9f9;
+      display: flex;
+      align-items: center;
+    }
+
+      .carousel-wrap {
+        position: relative;
+        width: 100%;
+        max-width: 1800px;
+        height: 600px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        perspective: 1000px;
+        overflow: hidden;
+      }
+
+      .container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 48px;
+        transition: transform 0.6s cubic-bezier(.22,.9,.28,1);
+        will-change: transform;
+        padding: 40px 0;
+      }
+
+     .card {
+      /* use fixed base size and animate with transforms (no width/height transitions)
+        to avoid layout reflow and jitter during animation */
+      width: 220px; /* base (side) width */
+      height: 300px; /* base (side) height */
+      margin: 0 20px;
+      border-radius: 16px;
+      box-shadow: 0 6px 14px rgba(0,0,0,0.22);
+      transition: transform 0.45s cubic-bezier(.22,.9,.28,1), opacity 0.45s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      color: #fff;
+      user-select: none;
+      font-size: 24px;
+      cursor: pointer;
+      flex-shrink: 0;
+      perspective: 1000px;
+      overflow: hidden;
+    }
+
+    /* flip inner */
+    .card-inner {
+      width: 100%;
+      height: 100%;
+      transform-style: preserve-3d;
+      position: relative;
+      border-radius: 16px;
+    }
+
+    .card-front, .card-back {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 16px;
+      backface-visibility: hidden;
+      overflow: hidden;
+    }
+
+    /* 앞면에 이미지를 넣을 수 있도록 구조 설정 */
+    .card-front {
+      background: #7f7f7f;
+      color: #fff;
+      font-size: 24px;
+      position: relative;
+    }
+
+    .card-front .card-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .card-front .card-label {
+      position: absolute;
+      font-size: 24px;
+      font-weight: bold;
+      color: #fff;
+      background: rgba(0,0,0,0.3);
+      padding: 8px 12px;
+      border-radius: 8px;
+    }
+
+    /* 카드 뒷면 배경색은 아래 .card-back 규칙을 변경하세요 (또는 --card-back-bg 변수 사용)
+       위치: 이 파일에서 `.card-back` 규칙의 `background` 속성을 수정하면 됩니다. */
+    .card-back {
+      background: var(--card-back-bg, #666);
+      color: #fff;
+      transform: rotateY(180deg);
+      font-size: 18px;
+      padding: 8px;
+      box-sizing: border-box;
+    }
+
+    /* 회전(빙글) 애니메이션: 정방향(앞->뒤) */
+    @keyframes spinFlip {
+      from { transform: rotateY(0deg); }
+      to   { transform: rotateY(180deg); }
+    }
+
+    /* 역방향(뒤->앞) */
+    @keyframes spinBack {
+      from { transform: rotateY(180deg); }
+      to   { transform: rotateY(0deg); }
+    }
+
+    .card-inner.spinning { animation: spinFlip 0.7s cubic-bezier(.22,.9,.28,1) forwards; }
+    .card-inner.spinning-back { animation: spinBack 0.7s cubic-bezier(.22,.9,.28,1) forwards; }
+
+    /* pager (top-center 5-dot indicator) */
+    .pager {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+      z-index: 60;
+      user-select: none;
+    }
+
+    .pager-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #ddd;
+      transition: background 0.3s, transform 0.3s, width 0.3s, height 0.3s;
+      cursor: pointer;
+    }
+
+    .pager-dot:nth-child(1) {
+      width: 6px;
+      height: 6px;
+    }
+
+    .pager-dot:nth-child(2) {
+      width: 10px;
+      height: 10px;
+    }
+
+    .pager-dot:nth-child(3) {
+      width: 14px;
+      height: 14px;
+      background: #333;
+    }
+
+    .pager-dot:nth-child(4) {
+      width: 10px;
+      height: 10px;
+    }
+
+    .pager-dot:nth-child(5) {
+      width: 6px;
+      height: 6px;
+    }
+
+    .pager-dot.active {
+      background: #333;
+      transform: scale(1);
+    }
+    .card.center {
+      z-index: 30;
+      opacity: 1;
+      transform: scale(1.5); /* 중앙 카드 크기 조정 */
+    }
+
+    .card.side {
+      z-index: 20;
+      opacity: 0.9;
+      transform: scale(1.0);
+    }
+
+    .card.end {
+      z-index: 10;
+      opacity: 0.5;
+        transform: scale(0.75);
+      margin: 0 3px; /* outermost ends narrowed to 3px */
+    }
+
+    .card.off {
+      opacity: 0;
+      transform: scale(0.6);
+      pointer-events: none;
+      margin: 0 3px; /* outermost off-cards narrowed to 3px */
+    }
+
+    .dots {
+      position: absolute;
+      top: 80px;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #999;
+      transition: background 0.3s;
+    }
+
+    .dot.active {
+      background: #333;
+    }
+
+    .home-btn {
+      position: absolute;
+      bottom: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 18px;
+      color: #444;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    .next-page-btn {
+      position: absolute;
+      bottom: 40px;
+      right: 40px;
+      padding: 12px 24px;
+      background: #000;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.3s, transform 0.2s;
+      z-index: 50;
+    }
+
+    .next-page-btn:hover {
+      background: #333;
+      transform: translateY(-2px);
+    }
+
+    .next-page-btn:active {
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="dots" id="dots"></div>
+  <div id="pager" class="pager" aria-hidden="false"></div>
+  <button class="next-page-btn" id="nextPageBtn">다음 페이지</button>
+
+  <div class="carousel-wrap">
+    <div class="container" id="carousel"></div>
+  </div>
+
+  <script>
+    const TOTAL = 18;
+    const container = document.getElementById('carousel');
+    const dotsContainer = document.getElementById('dots');
+
+    // create cards dynamically with numbers and tag real indices (use inner front/back for flip)
+    for (let i = 0; i < TOTAL; i++) {
+      const c = document.createElement('div');
+      c.className = 'card';
+      c.innerHTML = `
+        <div class="card-inner">
+          <div class="card-front">
+            <img class="card-img" src="" alt="Card ${i + 1}">
+            <div class="card-label">${i + 1}</div>
+          </div>
+          <div class="card-back">Info ${i + 1}</div>
+        </div>
+      `;
+      c.style.fontSize = '24px';
+      c.style.color = '#fff';
+      // mark as original (not clone) and store real index
+      c.dataset.clone = 'false';
+      c.dataset.realIndex = String(i);
+      container.appendChild(c);
+    }
+
+    // insert clones: last card before first, first card after last
+    // this creates a visual circular loop while we keep logical indexing via data-real-index
+    const originalCards = Array.from(container.querySelectorAll('.card'));
+    if (originalCards.length >= 2) {
+      const first = originalCards[0];
+      const last = originalCards[originalCards.length - 1];
+
+      const cloneLast = last.cloneNode(true);
+      cloneLast.dataset.clone = 'true';
+      // ensure clone has same real index as the original it represents
+      cloneLast.dataset.realIndex = last.dataset.realIndex;
+      container.insertBefore(cloneLast, first);
+
+      const cloneFirst = first.cloneNode(true);
+      cloneFirst.dataset.clone = 'true';
+      cloneFirst.dataset.realIndex = first.dataset.realIndex;
+      container.appendChild(cloneFirst);
+    }
+
+    // re-query cards (includes clones) and bind click handlers referencing the logical real index
+    const cards = Array.from(document.querySelectorAll('.card'));
+
+    // allow clicking a visible card (including clones):
+    // - if it's the current center -> toggle flip (front <-> back)
+    // - otherwise -> center that card (and clear flips from previous center)
+    cards.forEach((card) => {
+      card.addEventListener('click', (e) => {
+        if (card.classList.contains('off')) return;
+        const real = parseInt(card.dataset.realIndex, 10);
+        const inner = card.querySelector('.card-inner');
+        if (real === index) {
+          // toggle flip only on center card (use animated spin)
+          if (inner) toggleFlip(inner);
+          return;
+        }
+        // moving to a different card: clear flip/animation from previous center
+        const prevCenter = document.querySelector('.card.center .card-inner');
+        if (prevCenter) prevCenter.classList.remove('flipped','spinning','spinning-back');
+        index = real;
+        updateCards();
+      });
+    });
+
+    let index = 0; // start at card 0 (which displays as "1")
+    let baseOffset = 0;
+    let isFirstLayout = true;
+
+    function getCurrentTranslateX(el) {
+      const st = window.getComputedStyle(el);
+      const tr = st.transform || st.webkitTransform || st.mozTransform;
+      if (!tr || tr === 'none') return 0;
+      const m = tr.match(/matrix\((.+)\)/);
+      if (m) {
+        const values = m[1].split(',');
+        return parseFloat(values[4]);
+      }
+      const m3 = tr.match(/matrix3d\((.+)\)/);
+      if (m3) {
+        const values = m3[1].split(',');
+        return parseFloat(values[12]);
+      }
+      return 0;
+    }
+
+    function updateCards() {
+      // assign classes based on wrapped distance using logical real indices
+      cards.forEach((card) => {
+        card.classList.remove('center', 'side', 'end', 'off');
+        const real = parseInt(card.dataset.realIndex, 10);
+
+        let d = real - index;
+        if (d > TOTAL / 2) d -= TOTAL;
+        if (d < -TOTAL / 2) d += TOTAL;
+        d = Math.abs(d);
+
+        if (d === 0) card.classList.add('center');
+        else if (d === 1) card.classList.add('side');
+        else if (d === 2) card.classList.add('end');
+        else card.classList.add('off');
+      });
+
+      // ensure only center card may be flipped; remove flips from non-center cards
+      cards.forEach(card => {
+        if (!card.classList.contains('center')) {
+          const inner = card.querySelector('.card-inner');
+          if (inner) inner.classList.remove('flipped','spinning','spinning-back');
+        }
+      });
+
+      // Re-center container so the real active (original) card sits exactly in the wrap center
+      // prefer the original (non-clone) element for centering
+      let activeCard = document.querySelector(`.card[data-real-index="${index}"]:not([data-clone="true"])`);
+      if (!activeCard) activeCard = document.querySelector(`.card[data-real-index="${index}"]`);
+      if (!activeCard) return;
+
+      const wrapRect = document.querySelector('.carousel-wrap').getBoundingClientRect();
+      const cardRect = activeCard.getBoundingClientRect();
+
+      // how far the card center is from wrap center (positive = card is to the right)
+      const cardCenter = cardRect.left + cardRect.width / 2;
+      const wrapCenter = wrapRect.left + wrapRect.width / 2;
+      const delta = cardCenter - wrapCenter;
+
+      // compute new translate based on current transform to avoid absolute reflow jumps
+      const currentTx = getCurrentTranslateX(container);
+      const newTx = currentTx - delta;
+
+      // keep subpixel precision but round to 0.5 to reduce repaints; use translate3d for GPU
+      const rounded = Math.round(newTx * 2) / 2;
+      container.style.transform = `translate3d(${rounded}px,0,0)`;
+
+      // update pager display
+      updatePager();
+    }
+
+    function initPager() {
+      const p = document.getElementById('pager');
+      if (!p) return;
+      p.innerHTML = '';
+      for (let i = 0; i < 5; i++) {
+        const dot = document.createElement('div');
+        dot.className = 'pager-dot';
+        // center dot (index 2) is always active visually
+        if (i === 2) dot.classList.add('active');
+        dot.addEventListener('click', () => {
+          // clicking dot navigates (dot 0 = card 0, dot 1 = card 1, ..., dot 4 = card 17)
+          const targetIndex = i === 4 ? TOTAL - 1 : i;
+          index = targetIndex;
+          updateCards();
+        });
+        p.appendChild(dot);
+      }
+    }
+
+    function updatePager() {
+      // Center dot (index 2) always remains visually active (colored)
+      // Other dots remain gray and small as per CSS
+    }
+
+    // Toggle flip with animated spin: plays forward/back animations and sets 'flipped' state
+    function toggleFlip(inner) {
+      if (!inner) return;
+      if (inner._animating) return; // prevent double-trigger
+      if (inner.classList.contains('flipped')) {
+        // play reverse
+        inner._animating = true;
+        inner.classList.remove('spinning');
+        inner.classList.add('spinning-back');
+        const onEndBack = function () {
+          inner.classList.remove('spinning-back','flipped');
+          inner._animating = false;
+          inner.removeEventListener('animationend', onEndBack);
+        };
+        inner.addEventListener('animationend', onEndBack);
+      } else {
+        inner._animating = true;
+        inner.classList.remove('spinning-back');
+        inner.classList.add('spinning');
+        const onEnd = function () {
+          inner.classList.remove('spinning');
+          inner.classList.add('flipped');
+          inner._animating = false;
+          inner.removeEventListener('animationend', onEnd);
+        };
+        inner.addEventListener('animationend', onEnd);
+      }
+    }
+
+    function nextCard() {
+      index = (index + 1) % TOTAL;
+      updateCards();
+    }
+
+    function prevCard() {
+      index = (index - 1 + TOTAL) % TOTAL;
+      updateCards();
+    }
+
+    // wheel -> slide with brief throttle
+    let wheelLock = false;
+    window.addEventListener('wheel', e => {
+      if (wheelLock) return;
+      wheelLock = true;
+      if (e.deltaY > 0) nextCard();
+      else prevCard();
+      setTimeout(() => { wheelLock = false; }, 350);
+    }, {passive: true});
+
+    // mouse drag/swipe support
+    let dragStart = null;
+    let dragLock = false;
+    const DRAG_THRESHOLD = 50;
+
+    document.addEventListener('mousedown', e => {
+      dragStart = e.clientX;
+      dragLock = false;
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!dragStart || dragLock) return;
+      const dragDist = dragStart - e.clientX;
+      if (Math.abs(dragDist) > DRAG_THRESHOLD) {
+        dragLock = true;
+        if (dragDist > 0) nextCard();
+        else prevCard();
+        dragStart = null;
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      dragStart = null;
+    });
+
+    // When transition finishes, snap to a half-pixel aligned translate to reduce sub-pixel jitter
+    container.addEventListener('transitionend', (e) => {
+      if (e.propertyName !== 'transform') return;
+      // prefer the original (non-clone) element for centering calculations
+      let activeCard = document.querySelector(`.card[data-real-index="${index}"]:not([data-clone="true"])`);
+      if (!activeCard) activeCard = document.querySelector(`.card[data-real-index="${index}"]`);
+      if (!activeCard) return;
+      const wrapRect = document.querySelector('.carousel-wrap').getBoundingClientRect();
+      const cardRect = activeCard.getBoundingClientRect();
+      const cardCenter = cardRect.left + cardRect.width / 2;
+      const wrapCenter = wrapRect.left + wrapRect.width / 2;
+      const delta = cardCenter - wrapCenter;
+
+      const currentTx = getCurrentTranslateX(container);
+      const snapped = Math.round((currentTx - delta) * 2) / 2; // half-pixel snap
+      // set snapped transform but keep transition intact (no toggling)
+      container.style.transform = `translate3d(${snapped}px,0,0)`;
+    });
+
+    // initial layout
+    initPager();
+    requestAnimationFrame(() => updateCards());
+
+    // Next page button handler
+    document.getElementById('nextPageBtn').addEventListener('click', () => {
+      window.location.href = 'simulation.html';
+    });
+  </script>
+</body>
+</html>
