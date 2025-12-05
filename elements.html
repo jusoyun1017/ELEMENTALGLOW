@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Elemental Cards</title>
+  <title>ELEMENTAL GLOW</title>
   <style>
     html, body {
       margin: 0;
@@ -85,10 +85,10 @@
 
     /* 앞면에 이미지를 넣을 수 있도록 구조 설정 */
     .card-front {
-      background: #7f7f7f;
-      color: #fff;
-      font-size: 24px;
+      /* show only the image — make the front transparent so no white box appears */
+      background: transparent;
       position: relative;
+      overflow: hidden;
     }
 
     .card-front .card-img {
@@ -96,17 +96,12 @@
       height: 100%;
       object-fit: cover;
       display: block;
+      /* match card rounded corners so only image is visible within radius */
+      border-radius: inherit;
+      pointer-events: auto; /* images are clickable */
     }
 
-    .card-front .card-label {
-      position: absolute;
-      font-size: 24px;
-      font-weight: bold;
-      color: #fff;
-      background: rgba(0,0,0,0.3);
-      padding: 8px 12px;
-      border-radius: 8px;
-    }
+    /* card-label removed — front images no longer show a number overlay */
 
     /* 카드 뒷면 배경색은 아래 .card-back 규칙을 변경하세요 (또는 --card-back-bg 변수 사용)
        위치: 이 파일에서 `.card-back` 규칙의 `background` 속성을 수정하면 됩니다. */
@@ -133,6 +128,8 @@
 
     .card-inner.spinning { animation: spinFlip 0.7s cubic-bezier(.22,.9,.28,1) forwards; }
     .card-inner.spinning-back { animation: spinBack 0.7s cubic-bezier(.22,.9,.28,1) forwards; }
+    /* persistent flipped state: when a card has the 'flipped' marker keep it rotated */
+    .card-inner.flipped { transform: rotateY(180deg); }
 
     /* pager (top-center 5-dot indicator) */
     .pager {
@@ -282,6 +279,17 @@
 
   <script>
     const TOTAL = 18;
+    // ------------------------------------------------------------------
+    // 카드 앞면 이미지 및 뒷면 색상 설정
+    // - 앞면 이미지는 이 파일과 같은 폴더에 `card1.png` ~ `card18.png` 로 배치하세요.
+    // - 뒷면 색상(헥사코드)은 아래 BACK_COLORS 배열을 수정하세요.
+    //   변경하려면 이 파일에서 `BACK_COLORS` 배열의 값을 원하는 hex로 바꾸면 됩니다.
+    // ------------------------------------------------------------------
+    const BACK_COLORS = [
+      '#9E1111', '#CD0000', '#E25600', '#C8753A','#E5B20A', '#9CA663', '#7E873A',
+      '#28AF41', '#00DE6F', '#009D6B', '#649C99', '#00C9D0', '#1389B4',
+      '#0A77BA', '#3D6798', '#B39BBE', '#8C5368', '#7B2626'
+    ];
     const container = document.getElementById('carousel');
     const dotsContainer = document.getElementById('dots');
 
@@ -292,12 +300,14 @@
       c.innerHTML = `
         <div class="card-inner">
           <div class="card-front">
-            <img class="card-img" src="" alt="Card ${i + 1}">
-            <div class="card-label">${i + 1}</div>
+            <img class="card-img" src="./card${i + 1}.png" alt="Card ${i + 1}">
           </div>
-          <div class="card-back">Info ${i + 1}</div>
+          <div class="card-back"></div>
         </div>
       `;
+      // apply back color via CSS variable so .card-back uses it
+      const backColor = BACK_COLORS[i % BACK_COLORS.length] || '#666';
+      c.style.setProperty('--card-back-bg', backColor);
       c.style.fontSize = '24px';
       c.style.color = '#fff';
       // mark as original (not clone) and store real index
@@ -336,14 +346,31 @@
         if (card.classList.contains('off')) return;
         const real = parseInt(card.dataset.realIndex, 10);
         const inner = card.querySelector('.card-inner');
+        // If click target is the front image:
+        // - allow flip only if this card is currently centered
+        // - otherwise center the clicked card (do not flip)
+        const imgClicked = e.target.closest && e.target.closest('.card-img');
+        if (imgClicked) {
+          if (card.classList.contains('center')) {
+            if (inner) toggleFlip(inner);
+            return; // already center and handled flip
+          } else {
+            // center the clicked card when its image is clicked
+            const prevCenter = document.querySelector('.card.center .card-inner');
+            if (prevCenter) prevCenter.classList.remove('spinning','spinning-back','flipped');
+            index = real;
+            updateCards();
+            return;
+          }
+        }
         if (real === index) {
           // toggle flip only on center card (use animated spin)
           if (inner) toggleFlip(inner);
           return;
         }
-        // moving to a different card: clear flip/animation from previous center
+        // moving to a different card: clear any in-progress spin animations and clear flipped state
         const prevCenter = document.querySelector('.card.center .card-inner');
-        if (prevCenter) prevCenter.classList.remove('flipped','spinning','spinning-back');
+        if (prevCenter) prevCenter.classList.remove('spinning','spinning-back','flipped');
         index = real;
         updateCards();
       });
@@ -387,7 +414,7 @@
         else card.classList.add('off');
       });
 
-      // ensure only center card may be flipped; remove flips from non-center cards
+      // ensure flipped cards are only allowed when center; remove flips when cards are not center
       cards.forEach(card => {
         if (!card.classList.contains('center')) {
           const inner = card.querySelector('.card-inner');
@@ -438,11 +465,34 @@
         });
         p.appendChild(dot);
       }
+      // ensure center dot is black by default
+      const dots = p.querySelectorAll('.pager-dot');
+      if (dots && dots[2]) dots[2].style.background = '#000';
     }
 
     function updatePager() {
-      // Center dot (index 2) always remains visually active (colored)
-      // Other dots remain gray and small as per CSS
+      // Update the top-center dot color to reflect the current center card's back color
+      const p = document.getElementById('pager');
+      if (!p) return;
+      const dots = Array.from(p.querySelectorAll('.pager-dot'));
+      if (dots.length < 3) return;
+      const centerDot = dots[2];
+
+      // default when not flipped: black
+      let color = '#000';
+
+      // find the active center card (prefer original non-clone)
+      let activeCard = document.querySelector(`.card.center:not([data-clone="true"])`);
+      if (!activeCard) activeCard = document.querySelector('.card.center');
+      if (activeCard) {
+        const inner = activeCard.querySelector('.card-inner');
+        if (inner && inner.classList.contains('flipped')) {
+          const realIndex = parseInt(activeCard.dataset.realIndex || '0', 10);
+          color = BACK_COLORS[realIndex % BACK_COLORS.length] || '#000';
+        }
+      }
+
+      centerDot.style.background = color;
     }
 
     // Toggle flip with animated spin: plays forward/back animations and sets 'flipped' state
@@ -450,16 +500,19 @@
       if (!inner) return;
       if (inner._animating) return; // prevent double-trigger
       if (inner.classList.contains('flipped')) {
-        // play reverse
+        // currently flipped -> animate back to front (reverse animation)
         inner._animating = true;
         inner.classList.remove('spinning');
         inner.classList.add('spinning-back');
-        const onEndBack = function () {
-          inner.classList.remove('spinning-back','flipped');
-          inner._animating = false;
-          inner.removeEventListener('animationend', onEndBack);
+          const onEndBack = function () {
+            inner.classList.remove('spinning-back','flipped');
+            inner._animating = false;
+            inner.removeEventListener('animationend', onEndBack);
+            // ensure pager updates when flipping back
+            updatePager();
         };
         inner.addEventListener('animationend', onEndBack);
+        return;
       } else {
         inner._animating = true;
         inner.classList.remove('spinning-back');
@@ -469,6 +522,8 @@
           inner.classList.add('flipped');
           inner._animating = false;
           inner.removeEventListener('animationend', onEnd);
+            // reflect new flipped state in pager UI
+            updatePager();
         };
         inner.addEventListener('animationend', onEnd);
       }

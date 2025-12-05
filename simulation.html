@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebGPU 수채화 시뮬레이터</title>
+    <title>ELEMETAL GLOW</title>
     <style>
         body, html {
             margin: 0;
@@ -14,21 +14,17 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            cursor: none; 
             font-family: sans-serif;
-            -webkit-user-select: none; /* Safari */
-            -ms-user-select: none; /* IE 10+ */
-            user-select: none; /* Standard syntax */
         }
 
         #app {
             position: relative;
-            width: 100vw;
-            height: 100vh;
+            width: 100vw; 
+            height: 100vh; 
             background-color: white;
+            box-shadow: none; 
             overflow: hidden;
-            display: flex;
-            justify-content: center;
-            align-items: center;
         }
 
         #webgpuCanvas {
@@ -36,76 +32,112 @@
             height: 100%;
             display: block;
             cursor: crosshair;
-            background-color: white; /* 캔버스 기본 배경 */
+            position: absolute;
+            left: 0;
+            top: 0;
+            z-index: 1;
         }
 
-        #colorWheelContainer {
+        /* 2D watercolor canvas (overlay) */
+        #watercolorCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            cursor: crosshair;
             position: absolute;
+            left: 0;
+            top: 0;
+            z-index: 2; /* below wet layer */
+        }
+
+        /* wet layer canvas: dynamic wet pigment that dries over time */
+        #watercolorWetCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            cursor: crosshair;
+            position: absolute;
+            left: 0;
+            top: 0;
+            z-index: 3; /* above watercolorCanvas */
+            pointer-events: none; /* we use watercolorCanvas for input events */
+        }
+
+        /* --- 색상 선택 버튼 컨테이너 --- */
+        #colorWheelContainer {
+            position: absolute; 
             top: 50%;
-            transform: translateY(-50%);
+            transform: translateY(-50%); 
+            
             border-radius: 50%;
-            background-color: transparent;
+            background-color: transparent; 
             display: flex;
             justify-content: center;
             align-items: center;
-            overflow: visible;
-            cursor: default;
-            z-index: 10;
+            overflow: visible; 
+            cursor: default; 
+            z-index: 10; 
         }
 
+        /* --- 18개 버튼을 담을 원형 컨테이너 (회전 대상) --- */
         #colorPalette {
             position: relative;
             border-radius: 50%;
         }
 
+        /* --- 개별 색상 버튼 스타일 --- */
         .color-button {
             position: absolute;
-            width: 60px;
+            width: 60px; 
             height: 60px;
             border-radius: 50%;
             border: 2px solid white;
             box-sizing: border-box;
             cursor: pointer;
-            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out; 
             transform: rotate(var(--initial-rotation-compensate, 0deg));
-            z-index: 1;
+            z-index: 1; 
         }
 
+        /* 마우스 오버 시 크기 확대 효과 재추가 */
         .color-button:hover {
-            transform: scale(1.1) rotate(var(--initial-rotation-compensate, 0deg));
+            transform: scale(1.1) rotate(var(--initial-rotation-compensate, 0deg)); 
             box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.8), 0 0 15px rgba(0, 0, 0, 0.6);
-            z-index: 2;
+            z-index: 2; 
         }
 
+        /* --- 색상 포인터 --- */
         #colorPointer {
-            position: fixed;
+            position: fixed; 
             width: 40px;
             height: 40px;
             border-radius: 50%;
             background-color: #00bcd4;
             border: 4px solid white;
             box-shadow: 0 0 0 2px #00bcd4, 0 4px 10px rgba(0, 0, 0, 0.2);
-            transition: background-color 0.2s;
-            z-index: 9999;
-            transform: translate(-50%, -50%);
-            pointer-events: none;
+            transition: background-color 0.2s; 
+            z-index: 9999; 
+            transform: translate(-50%, -50%); 
+            pointer-events: none; 
         }
-
+        
+        /* --- 컨트롤 패널 스타일 (캔버스 초기화) --- */
         #controls {
             position: absolute;
             top: 20px;
             right: 20px;
             z-index: 20;
             background-color: rgba(255, 255, 255, 0.9);
-            padding: 10px;
+            padding: 10px; 
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            font-family: sans-serif;
         }
-
-        #clearButton {
+        
+        #controls button {
             padding: 8px 15px;
-            background-color: #000000;
-            color: white;
+            background-color: #000000; 
+            color: white; 
             border: none;
             border-radius: 4px;
             cursor: pointer;
@@ -115,34 +147,109 @@
             box-sizing: border-box;
         }
 
-        #clearButton:hover {
-            background-color: #333333;
+        /* advanced control UI (sliders) */
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
         }
 
+        .control-row label {
+            width: 110px;
+            font-size: 13px;
+            color: #333;
+            pointer-events: none;
+        }
+
+        .control-row input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 160px;
+            height: 6px;
+            background: #ddd;
+            border-radius: 6px;
+            outline: none;
+        }
+
+        .control-row input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #3a86ff;
+            box-shadow: 0 0 5px rgba(0,0,0,0.2);
+            cursor: pointer;
+        }
+
+        .controls-title {
+            font-weight: 700;
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+
+        /* hover inverts background/text for better feedback */
+        #controls button:hover {
+            background-color: #ffffff;
+            color: #000000;
+            box-shadow: 0 0 0 1px rgba(0,0,0,0.08) inset;
+        }
+
+        /* --- 호버 텍스트 디스플레이 스타일 --- */
         #hoverTextDisplay {
             position: absolute;
             top: 50%;
-            left: 10px;
+            left: 10px; 
             transform: translateY(-50%);
             padding: 5px 10px;
-            background-color: transparent;
-            color: black;
+            background-color: transparent; 
+            color: #fff; 
             border-radius: 4px;
-            font-size: 18px;
+            font-family: sans-serif;
+            font-size: 18px; 
             font-weight: bold;
-            pointer-events: none;
+            pointer-events: auto; /* allow clicking controls */
             opacity: 0;
             transition: opacity 0.2s;
             z-index: 10;
-            box-shadow: none;
+            box-shadow: none; 
+        }
+
+        /* Mobile: place palette on top, centered and easier to tap */
+        @media (max-width: 720px) {
+            #colorWheelContainer {
+                left: 50% !important;
+                top: 12px !important;
+                transform: translateX(-50%) !important;
+                z-index: 50;
+            }
+
+            #colorPalette {
+                transform: translateY(0) !important;
+            }
+
+            /* make pointer slightly smaller on touch devices */
+            #colorPointer { width: 34px; height: 34px; }
         }
     </style>
 </head>
 <body>
     <div id="app">
         <canvas id="webgpuCanvas"></canvas>
+        <!-- 2D overlay canvas for watercolor drawing (matches simulation2.html behavior) -->
+        <canvas id="watercolorCanvas"></canvas>
+        <canvas id="watercolorWetCanvas"></canvas>
         <div id="controls">
-            <button id="clearButton">캔버스 초기화</button>
+            <div style="display:flex; gap:8px; align-items:center;">
+                <button id="clearButton">캔버스 초기화</button>
+            </div>
+            <div style="margin-top:8px;">
+                <button id="homeButton" title="메인으로" aria-label="메인으로">메인으로</button>
+            </div>
+
+            <!-- advanced settings removed; drawing settings are fixed to the requested preset -->
+            <!-- share button removed -->
+            <!-- GIF feature removed -->
         </div>
     </div>
     
@@ -162,6 +269,698 @@
         const WORKGROUP_SIZE = 8; // 컴퓨트 셰이더 워크그룹 크기 (SIM_SIZE는 WORKGROUP_SIZE의 배수여야 함)
 
         // ===== WGSL Shaders =====
+
+        // --- Shared globals so UI works even if WebGPU init fails ---
+        // color list (keeps same order / colors as previously used in this file)
+        const COLORS = [
+            '#9E1111', '#CD0000', '#E25600', '#C8753A', '#E5B20A', '#9CA663',
+            '#7E873A', '#28AF41', '#00DE6F', '#009D6B', '#649C99', '#00C9D0',
+            '#1389B4', '#0A77BA', '#3D6798', '#B39BBE', '#8C5368', '#7B2626'
+        ];
+
+        // globals for optional GPU integration (assigned when initWebGPU succeeds)
+        let deviceGlobal = null;
+        let currentColorBufferGlobal = null;
+        let inputParamsBufferGlobal = null;
+        let inputSimTextureGlobal = null;
+        let outputSimTextureGlobal = null;
+        let initialDataGlobal = null;
+
+        // No-op placeholder: replaced by initWebGPU when GPU input function becomes available
+        window.performGpuInput = function(e) { /* will be assigned later */ };
+
+        // --- Top-level 2D UI + drawing initialization (runs regardless of WebGPU) ---
+        (function init2DUI() {
+            // Create overlay canvas and palette handlers
+            // Note: DOM elements exist in the HTML; just wire behavior here so it works even if GPU fails
+            const watercolorCanvas = document.getElementById('watercolorCanvas');
+            const wcCtx = watercolorCanvas?.getContext ? watercolorCanvas.getContext('2d') : null;
+            // wet layer canvas: holds transient wet pigment that dries into the dry layer
+            const watercolorWetCanvas = document.getElementById('watercolorWetCanvas');
+            const wetCtx = watercolorWetCanvas?.getContext ? watercolorWetCanvas.getContext('2d') : null;
+            const colorWheelContainer = document.getElementById('colorWheelContainer');
+            const colorPointer = document.getElementById('colorPointer');
+            const colorPalette = document.getElementById('colorPalette');
+            const hoverTextDisplay = document.getElementById('hoverTextDisplay');
+            const clearButton = document.getElementById('clearButton');
+
+            if (!watercolorCanvas || !wcCtx || !colorPalette) return; // nothing to wire
+
+            // base brush radius in CSS pixels — user requested to halve brush size
+            let baseRadius = 45; // was 90, reduced by 50%
+            let currentDrawColor = COLORS[0] || '#9E1111';
+            // expose for GPU input to read latest selected color
+            window.currentDrawColorGlobal = currentDrawColor;
+            let rotationAngle = 0; // degrees, for wheel rotate behavior
+            let isDrawingLocal = false;
+            let spreadStartTime = 0;
+            let lastMoveTime = 0;
+            const THROTTLE_TIME = 12; // lower throttle for more responsive strokes
+            // faster spread to simulate slippery / watery paint
+            const ANIMATION_DURATION = 350; // decrease from 1000 -> faster spread
+            const MAX_SPREAD_FACTOR = 2.6; // larger max spread when paint has more water
+            let lastPointerX = 0, lastPointerY = 0;
+
+            // Simulation configuration (bound to UI sliders below)
+            // Fixed simulation configuration (locked — advanced UI removed)
+            const simConfig = {
+                brushSize: 45,
+                spreadFactor: 2.6,
+                spreadDuration: ANIMATION_DURATION,
+                granulation: 0.5,
+                mixingStrength: 0.90,
+                dryingSpeed: 1.0,
+                paperStrength: 0.18,
+                detailed: true,
+                minOpacity: 0.20,
+                maxOpacity: 0.50,
+                ephemeral: false
+            };
+
+            function hexToRgba(hex, alpha) {
+                const r = parseInt(hex.slice(1, 3), 16);
+                const g = parseInt(hex.slice(3, 5), 16);
+                const b = parseInt(hex.slice(5, 7), 16);
+                return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+            }
+
+            function resizeOverlay() {
+                // Support high-DPI displays so drawing coordinates match client coordinates
+                const ratio = window.devicePixelRatio || 1;
+                const w = Math.floor(watercolorCanvas.clientWidth * ratio);
+                const h = Math.floor(watercolorCanvas.clientHeight * ratio);
+                watercolorCanvas.width = w;
+                watercolorCanvas.height = h;
+                if (watercolorWetCanvas) {
+                    // keep wet canvas in sync so coordinates match
+                    watercolorWetCanvas.width = w;
+                    watercolorWetCanvas.height = h;
+                    wetCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+                }
+                wcCtx.setTransform(ratio, 0, 0, ratio, 0, 0); // normalize CSS px -> canvas px
+                wcCtx.clearRect(0, 0, watercolorCanvas.clientWidth, watercolorCanvas.clientHeight);
+                wcCtx.fillStyle = 'black';
+                wcCtx.fillRect(0, 0, watercolorCanvas.clientWidth, watercolorCanvas.clientHeight);
+
+                // draw subtle paper texture layer behind the strokes
+                // uses simConfig.paperStrength
+                wcCtx.globalAlpha = simConfig.paperStrength;
+                drawPaperTexture();
+                wcCtx.globalAlpha = 1.0;
+
+
+            // Create / draw subtle paper texture onto overlay (cached via offscreen canvas)
+            let _paperPatternCanvas = null;
+            function generatePaperPattern(width, height) {
+                const ratio = window.devicePixelRatio || 1;
+                const pw = Math.max(128, Math.ceil(width * ratio));
+                const ph = Math.max(128, Math.ceil(height * ratio));
+                const oc = document.createElement('canvas');
+                oc.width = pw; oc.height = ph;
+                const octx = oc.getContext('2d');
+
+                // base light paper grain
+                octx.fillStyle = '#ffffff';
+                octx.fillRect(0, 0, pw, ph);
+
+                // speckle noise
+                const img = octx.createImageData(pw, ph);
+                for (let i = 0; i < img.data.length; i += 4) {
+                    const v = 230 + Math.floor(Math.random() * 25); // light gray specks
+                    img.data[i] = v; img.data[i+1] = v; img.data[i+2] = v; img.data[i+3] = 12; // very faint
+                }
+                octx.putImageData(img, 0, 0);
+
+                // subtle paper fibers (long thin strokes)
+                octx.globalAlpha = 0.06;
+                for (let i = 0; i < 150; i++) {
+                    octx.beginPath();
+                    const x1 = Math.random() * pw;
+                    const y1 = Math.random() * ph;
+                    const len = 20 + Math.random() * 120;
+                    const ang = (Math.random() - 0.5) * 0.6;
+                    const x2 = x1 + Math.cos(ang) * len;
+                    const y2 = y1 + Math.sin(ang) * len;
+                    octx.strokeStyle = `rgba(${210 + Math.floor(Math.random()*30)}, ${210 + Math.floor(Math.random()*30)}, ${210 + Math.floor(Math.random()*30)}, 1)`;
+                    octx.lineWidth = 0.8 + Math.random() * 1.5;
+                    octx.moveTo(x1, y1);
+                    octx.lineTo(x2, y2);
+                    octx.stroke();
+                }
+
+                return oc;
+            }
+
+            // in-memory queue of active wet blobs; each blob dries over time and is
+            // composited into the main watercolor canvas when finished
+            if (!window._activeWetBlobs) window._activeWetBlobs = [];
+
+            // limits to avoid unbounded memory use
+            const MAX_ACTIVE_WET_BLOBS = 180;
+
+            // per-frame wet-layer processor: render active wet blobs onto wet canvas,
+            // update drying progress and composite finished blobs into the dry canvas
+            function processWetLayer(now = performance.now()) {
+                if (!watercolorWetCanvas || !wetCtx) return;
+
+                // clear wet canvas each frame (keep paper and dry strokes beneath intact)
+                wetCtx.clearRect(0, 0, watercolorWetCanvas.clientWidth, watercolorWetCanvas.clientHeight);
+                // make sure wet canvas background is transparent when compositing over black dry canvas
+                // (no fill needed here) 
+
+                // draw each blob with appropriate alpha/blur based on age
+                for (let i = window._activeWetBlobs.length - 1; i >= 0; i--) {
+                    const b = window._activeWetBlobs[i];
+                    const age = Math.max(0, now - b.createdAt);
+                    const t = Math.min(1, age / b.lifespan);
+
+                    // progress-based expansion/blur to simulate diffusion
+                    const spread = 1 + t * (0.6 + (b.spreadExtra || 0));
+                    const drawW = b.w * spread;
+                    const drawH = b.h * spread;
+                    const dx = b.x - (drawW - b.w) / 2;
+                    const dy = b.y - (drawH - b.h) / 2;
+
+                    // compute alpha: decays while drying (but keep a minimum until final composite)
+                    const blobAlpha = b.initialAlpha * (1 - t * 0.92);
+
+                    wetCtx.save();
+                    wetCtx.globalCompositeOperation = b.composite || 'multiply';
+                    // increase blur slightly as it spreads
+                    wetCtx.filter = `blur(${Math.min(12, 1 + t * 8)}px)`;
+                    wetCtx.globalAlpha = Math.max(0.02, blobAlpha);
+                    wetCtx.drawImage(b.canvas, dx, dy, drawW, drawH);
+                    wetCtx.filter = 'none';
+                    wetCtx.restore();
+
+                    // finalize if dried (past lifespan)
+                    if (t >= 1) {
+                        // If ephemeral/fireworks mode is enabled on this blob or globally,
+                        // do not permanently composite into the dry canvas — let it fade/vanish.
+                        const shouldComposite = !(simConfig && simConfig.ephemeral) && !b.ephemeral;
+                        // composite into dry canvas (wcCtx) — treat as final paint deposit
+
+                        if (shouldComposite) {
+                            try {
+                                wcCtx.save();
+                                wcCtx.globalCompositeOperation = 'multiply';
+                                wcCtx.globalAlpha = Math.min(1, b.finalCompositeAlpha || b.initialAlpha * 0.92);
+                                wcCtx.filter = 'none';
+                                wcCtx.drawImage(b.canvas, b.x, b.y, b.w, b.h);
+                                wcCtx.restore();
+                            } catch (err) { /* ignore render errors */ }
+                        }
+
+                        // remove from active queue
+                        window._activeWetBlobs.splice(i, 1);
+                    }
+                }
+
+                // cap queue length to avoid runaway memory use
+                if (window._activeWetBlobs.length > MAX_ACTIVE_WET_BLOBS) {
+                    window._activeWetBlobs.splice(0, window._activeWetBlobs.length - MAX_ACTIVE_WET_BLOBS);
+                }
+
+                // schedule next frame
+                requestAnimationFrame(processWetLayer);
+            }
+
+            // start the wet-layer processing loop
+            requestAnimationFrame(processWetLayer);
+
+            function drawPaperTexture() {
+                try {
+                    const w = watercolorCanvas.clientWidth;
+                    const h = watercolorCanvas.clientHeight;
+                    if (!_paperPatternCanvas && w > 0 && h > 0) _paperPatternCanvas = generatePaperPattern(w, h);
+                    if (!_paperPatternCanvas) return;
+
+                    // tile the pattern across the canvas with multiply/overlay effect
+                    wcCtx.save();
+                    wcCtx.globalAlpha = 0.18; // subtle strength
+                    wcCtx.globalCompositeOperation = 'multiply';
+                    const pat = wcCtx.createPattern(_paperPatternCanvas, 'repeat');
+                    wcCtx.fillStyle = pat;
+                    wcCtx.fillRect(0, 0, watercolorCanvas.clientWidth, watercolorCanvas.clientHeight);
+                    wcCtx.globalCompositeOperation = 'source-over';
+                    wcCtx.restore();
+                } catch (err) { /* ignore */ }
+            }
+                // size & position for color wheel (show half on left)
+                const containerSize = (120 * 2) + 30; // BUTTON_RADIUS * 2 + 30
+                colorPalette.style.width = `${120 * 2}px`;
+                colorPalette.style.height = `${120 * 2}px`;
+                colorWheelContainer.style.width = `${containerSize}px`;
+                colorWheelContainer.style.height = `${containerSize}px`;
+                if (window.innerWidth <= 720) {
+                    // mobile: top-centered
+                    colorWheelContainer.style.left = '50%';
+                    colorWheelContainer.style.top = '12px';
+                    colorWheelContainer.style.transform = 'translateX(-50%)';
+                    hoverTextDisplay.style.left = `${Math.floor(containerSize / 2) + 14}px`;
+                } else {
+                    colorWheelContainer.style.left = `-${Math.floor(containerSize / 2)}px`;
+                    hoverTextDisplay.style.left = `${containerSize + 20}px`;
+                }
+            }
+
+            function createColorPaletteTop() {
+                colorPalette.innerHTML = '';
+                const NUM_BUTTONS = 18;
+                // adapt sizes for mobile
+                const isMobile = window.innerWidth <= 720;
+                const BUTTON_RADIUS = isMobile ? 88 : 120;
+                const BUTTON_SIZE = isMobile ? 48 : 60;
+
+                    const angleStep = 360 / NUM_BUTTONS;
+                    for (let i = 0; i < NUM_BUTTONS; i++) {
+                        const angle = i * angleStep; // degrees like simulation2
+                        const radians = angle * (Math.PI / 180);
+
+                        const btn = document.createElement('div');
+                        btn.className = 'color-button';
+
+                        // compute position inside the circular palette container (same math as simulation2)
+                        const x = BUTTON_RADIUS + BUTTON_RADIUS * Math.cos(radians) - BUTTON_SIZE / 2;
+                        const y = BUTTON_RADIUS + BUTTON_RADIUS * Math.sin(radians) - BUTTON_SIZE / 2;
+                        btn.style.left = `${x}px`;
+                        btn.style.top = `${y}px`;
+
+                        const color = COLORS[i % COLORS.length];
+                        btn.style.background = color;
+                        btn.style.setProperty('--initial-rotation-compensate', `-${angle}deg`);
+
+                    btn.addEventListener('mouseenter', () => {
+                        hoverTextDisplay.style.opacity = '1';
+                        hoverTextDisplay.textContent = color;
+                        setTimeout(() => { hoverTextDisplay.style.opacity = '0'; }, 900);
+                    });
+
+                    btn.addEventListener('click', () => {
+                        currentDrawColor = color;
+                        // expose color selection for GPU input to pick up
+                        window.currentDrawColorGlobal = color;
+                        colorPointer.style.backgroundColor = color;
+                        colorPointer.style.boxShadow = `0 0 0 2px ${color}, 0 4px 10px rgba(0,0,0,0.2)`;
+                                // If GPU buffer exists, update it too (rendering uniform)
+                                if (currentColorBufferGlobal && deviceGlobal) {
+                                    deviceGlobal.queue.writeBuffer(currentColorBufferGlobal, 0, new Float32Array(hexToRgbaArray(color)));
+                                }
+                    });
+
+                    btn.addEventListener('mouseover', () => {
+                        colorPointer.style.boxShadow = `0 0 0 2px ${color}, 0 4px 10px rgba(0, 0, 0, 0.2)`;
+                        colorPointer.style.backgroundColor = color;
+                    });
+
+                    btn.addEventListener('mouseout', () => {
+                        colorPointer.style.backgroundColor = currentDrawColor;
+                        colorPointer.style.boxShadow = `0 0 0 2px ${currentDrawColor}, 0 4px 10px rgba(0,0,0,0.2)`;
+                    });
+
+                    colorPalette.appendChild(btn);
+                }
+
+                // set initial pointer color
+                colorPointer.style.backgroundColor = currentDrawColor;
+                colorPointer.style.boxShadow = `0 0 0 2px ${currentDrawColor}, 0 4px 10px rgba(0,0,0,0.2)`;
+            }
+
+            function createIrregularShape(context, cx, cy, radius) {
+                const numPoints = 8 + Math.floor(Math.random() * 5);
+                context.beginPath();
+                for (let i = 0; i < numPoints; i++) {
+                    const angle = (i / numPoints) * Math.PI * 2;
+                    const irregularity = 0.7 + Math.random() * 0.6;
+                    const currentRadius = radius * irregularity;
+                    const x = cx + Math.cos(angle) * currentRadius;
+                    const y = cy + Math.sin(angle) * currentRadius;
+                    if (i === 0) context.moveTo(x, y);
+                    else {
+                        const prevX = cx + Math.cos(((i - 1) / numPoints) * Math.PI * 2) * radius * (0.7 + Math.random() * 0.6);
+                        const prevY = cy + Math.sin(((i - 1) / numPoints) * Math.PI * 2) * radius * (0.7 + Math.random() * 0.6);
+                        const cp1x = cx + Math.cos(angle - (Math.PI / numPoints) * 0.5) * radius * (0.8 + Math.random() * 0.4);
+                        const cp1y = cy + Math.sin(angle - (Math.PI / numPoints) * 0.5) * radius * (0.8 + Math.random() * 0.4);
+                        context.bezierCurveTo(prevX, prevY, cp1x, cp1y, x, y);
+                    }
+                }
+                context.closePath();
+            }
+
+            // Draw a watercolor-like blob.
+            // Adds directionally-biased strokes (flow) based on pointer velocity (vx, vy)
+            // and schedules a subtle post-diffusion to emulate paint soaking into paper.
+            // High-fidelity watercolor blob renderer
+            // - uses an offscreen canvas to compose layered pigment, rings, speckles and blurred diffusion
+            // - pressure controls opacity and mixing
+            // - vx,vy provide smear direction
+            function drawWatercolorBlob(x, y, currentSpreadRadius, vx = 0, vy = 0, pressure = 1.0) {
+                wcCtx.save();
+                wcCtx.globalCompositeOperation = 'multiply';
+
+                // Map pressure (0..1) into requested opacity range [0.2, 0.5]
+                const clampedPressure = Math.max(0, Math.min(1, pressure));
+                // make base paint more saturated/visible for vivid colors
+                const basePaintAlpha = 0.35 + clampedPressure * 0.45; // range ~0.35 .. 0.8
+                const watercolorColor = hexToRgba(currentDrawColor, basePaintAlpha);
+
+                const baseBrushRadius = currentSpreadRadius * 0.8;
+                    // number of fine strokes increases with brush size and granulation
+                    const numStrokes = Math.max(8, Math.floor(8 + baseBrushRadius * 0.12 + simConfig.granulation * 36));
+                    const blurAmount = baseBrushRadius * (0.4 + simConfig.granulation * 0.6);
+
+                // create an offscreen canvas sized to contain the largest spread
+                const ratio = window.devicePixelRatio || 1;
+                const offsize = Math.ceil((baseBrushRadius * (1 + MAX_SPREAD_FACTOR)) * 4 * ratio);
+                let off = document.createElement('canvas');
+                off.width = offsize; off.height = offsize;
+                const oc = off.getContext('2d');
+                oc.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+                // center of the offscreen blot in CSS pixels
+                const cx = off.width / (2 * ratio);
+                const cy = off.height / (2 * ratio);
+
+                // Directional flow scaling - when pointer moves quickly the paint smears in that direction
+                const flowScale = Math.min(20, Math.sqrt(vx * vx + vy * vy) * 2);
+
+                // Color mixing: sample underlying pixels in a small box and mix the stroke color
+                // Amount of mixing increases with pressure and with larger brush
+                let mixedCenterColor = null;
+                try {
+                    const ratio = window.devicePixelRatio || 1;
+                    const samplePx = Math.max(4, Math.floor(baseBrushRadius * 0.12));
+                    const sx = Math.floor(Math.max(0, (x - samplePx / 2) * ratio));
+                    const sy = Math.floor(Math.max(0, (y - samplePx / 2) * ratio));
+                    const sw = Math.min(Math.floor(samplePx * ratio), watercolorCanvas.width - sx);
+                    const sh = Math.min(Math.floor(samplePx * ratio), watercolorCanvas.height - sy);
+                    if (sw > 0 && sh > 0) {
+                        const data = wcCtx.getImageData(sx, sy, sw, sh).data;
+                        let rSum = 0, gSum = 0, bSum = 0, count = 0;
+                        for (let i = 0; i < data.length; i += 4) {
+                            rSum += data[i];
+                            gSum += data[i + 1];
+                            bSum += data[i + 2];
+                            count++;
+                        }
+                        if (count > 0) {
+                            const ar = rSum / count / 255;
+                            const ag = gSum / count / 255;
+                            const ab = bSum / count / 255;
+
+                            // mixing weight depends on pressure and global mixingStrength
+                            const mixStrength = Math.min(0.95, simConfig.mixingStrength * (0.25 + clampedPressure * 0.75));
+                            const src = hexToRgbaArray(currentDrawColor);
+                            const mixedR = src[0] * (1 - mixStrength) + ar * mixStrength;
+                            const mixedG = src[1] * (1 - mixStrength) + ag * mixStrength;
+                            const mixedB = src[2] * (1 - mixStrength) + ab * mixStrength;
+                            mixedCenterColor = `rgba(${Math.floor(mixedR * 255)}, ${Math.floor(mixedG * 255)}, ${Math.floor(mixedB * 255)}, ${basePaintAlpha})`;
+                        }
+                    }
+                } catch (err) { /* getImageData may fail on cross-origin or very large canvases; ignore */ }
+
+                // Draw multiple soft irregular strokes to offscreen canvas so we can blur and composite
+                for (let i = 0; i < numStrokes; i++) {
+                    const t = i / numStrokes; // 0..1 across strokes
+                    const radius = baseBrushRadius * (0.6 + Math.random() * 0.9) * (1 + t * 0.4);
+                    // directional bias
+                    const offsetX = (Math.random() - 0.5) * blurAmount + vx * (t * flowScale * 0.6);
+                    const offsetY = (Math.random() - 0.5) * blurAmount + vy * (t * flowScale * 0.6);
+
+                    // stroke alpha factors: base translucency, pressure and granulation
+                    const strokeAlpha = (0.01 + Math.random() * 0.06) * (1 - t * 0.85) * (0.6 + clampedPressure * 0.6) * (0.6 + simConfig.granulation * 0.8);
+                                                // mixing strength controlled globally and modulated by pressure
+                                                const mixStrength = Math.min(0.95, simConfig.mixingStrength * (0.25 + clampedPressure * 0.75));
+                    oc.globalAlpha = strokeAlpha;
+                    oc.fillStyle = watercolorColor;
+                    if (i % 4 === 0) oc.filter = `blur(${1.5 + t * 3.5}px)`;
+                    else oc.filter = 'none';
+
+                    // draw irregular shape around center (cx,cy)
+                    oc.beginPath();
+                    // reuse createIrregularShape logic but draw to offscreen
+                    const numPoints = 8 + Math.floor(Math.random() * 6);
+                    for (let p = 0; p < numPoints; p++) {
+                        const a = (p / numPoints) * Math.PI * 2;
+                        const ir = radius * (0.7 + Math.random() * 0.7);
+                        const px = cx + Math.cos(a) * ir + offsetX;
+                        const py = cy + Math.sin(a) * ir + offsetY;
+                        if (p === 0) oc.moveTo(px, py);
+                        else oc.lineTo(px, py);
+                    }
+                    oc.closePath();
+                    oc.fill();
+                    oc.filter = 'none';
+                }
+
+                // Stronger center stroke (less blurred) to represent concentrated pigment
+                wcCtx.filter = 'none';
+                // core: darker, concentrated pigment toward center
+                // core: darker, concentrated pigment toward center
+                oc.globalAlpha = Math.min(0.95, 0.32 + clampedPressure * 0.48 + simConfig.mixingStrength * 0.15);
+                oc.fillStyle = mixedCenterColor || hexToRgba(currentDrawColor, Math.min(0.95, basePaintAlpha + 0.15));
+                oc.beginPath();
+                // smaller, dense irregular core
+                const coreR = baseBrushRadius * 0.6;
+                for (let p = 0; p < 10; p++) {
+                    const a = (p / 10) * Math.PI * 2;
+                    const r = coreR * (0.7 + Math.random() * 0.5);
+                    const px = cx + Math.cos(a) * r + vx * 0.6;
+                    const py = cy + Math.sin(a) * r + vy * 0.6;
+                    if (p === 0) oc.moveTo(px, py);
+                    else oc.lineTo(px, py);
+                }
+                oc.closePath();
+                oc.fill();
+
+                // add a ring: draw a darker thin outline then blur heavily to create pigment-edge ring
+                oc.globalAlpha = 0.42 + clampedPressure * 0.38 + simConfig.granulation * 0.25;
+                oc.strokeStyle = hexToRgba(currentDrawColor, Math.min(0.9, basePaintAlpha + 0.2));
+                oc.lineWidth = Math.max(2, coreR * 0.09);
+                oc.beginPath();
+                const ringR = coreR * (1.0 + 0.25 * Math.random());
+                for (let p = 0; p < 24; p++) {
+                    const a = (p / 24) * Math.PI * 2;
+                    const r = ringR * (0.85 + Math.random() * 0.35);
+                    const px = cx + Math.cos(a) * r;
+                    const py = cy + Math.sin(a) * r;
+                    if (p === 0) oc.moveTo(px, py);
+                    else oc.lineTo(px, py);
+                }
+                oc.closePath();
+                oc.stroke();
+
+                // speckles (pigment granulation). Draw small scattered darker dots then blur
+                oc.globalAlpha = 0.35 * clampedPressure * (0.6 + simConfig.granulation);
+                for (let s = 0; s < Math.floor(coreR * (1.8 + simConfig.granulation * 2.8)); s++) {
+                    const sx = cx + (Math.random() - 0.5) * coreR * 2.3;
+                    const sy = cy + (Math.random() - 0.5) * coreR * 2.3;
+                    const r = Math.random() * (Math.max(1, coreR * 0.04));
+                    oc.beginPath(); oc.arc(sx, sy, r, 0, Math.PI * 2); oc.fill();
+                }
+
+                // do a multi-pass blur using temporary canvases to simulate diffusion
+                // small blur pass
+                const blurA = 2 + simConfig.spreadFactor * 0.6;
+                oc.filter = `blur(${Math.max(1.2, blurA)}px)`;
+                const tmp1 = document.createElement('canvas'); tmp1.width = off.width; tmp1.height = off.height;
+                const t1 = tmp1.getContext('2d'); t1.drawImage(off, 0, 0);
+                // medium blur pass (blend lighter)
+                t1.filter = 'none';
+                oc.clearRect(0, 0, off.width, off.height);
+                oc.drawImage(tmp1, 0, 0);
+
+                // Instead of stamping directly into the dry canvas, push this offscreen
+                // blob into the wet-layer queue. The wet-layer will render each frame and
+                // dry+composite the blobs into the dry canvas when finished.
+                const drawX = x - cx;
+                const drawY = y - cy;
+                const initialAlpha = Math.max(0.18, Math.min(1.0, (0.8 + clampedPressure * 0.2) * (0.8 + simConfig.mixingStrength * 0.3)));
+                const lifespan = Math.max(300, Math.round(1800 / Math.max(0.18, simConfig.dryingSpeed)));
+
+                if (!window._activeWetBlobs) window._activeWetBlobs = [];
+                if (!watercolorWetCanvas || !wetCtx) {
+                    // no wet canvas available -> fallback to immediate stamping into dry canvas
+                    wcCtx.save();
+                    wcCtx.globalCompositeOperation = 'multiply';
+                    wcCtx.globalAlpha = initialAlpha;
+                    wcCtx.filter = 'blur(1.5px)';
+                    wcCtx.drawImage(off, drawX, drawY, cx * 2, cy * 2);
+                    wcCtx.filter = 'none';
+                    wcCtx.restore();
+                } else {
+                    window._activeWetBlobs.push({
+                    canvas: off,
+                    x: drawX,
+                    y: drawY,
+                    w: cx * 2,
+                    h: cy * 2,
+                    createdAt: performance.now(),
+                    lifespan: lifespan,
+                    initialAlpha: initialAlpha,
+                        composite: 'multiply',
+                        ephemeral: !!simConfig.ephemeral,
+                    spreadExtra: simConfig.spreadFactor * 0.6
+                });
+
+                }
+                // Subtle post-spread diffusion: schedule a few faded, blurred larger shapes
+                const spreadSteps = Math.max(3, Math.floor(4 + simConfig.spreadFactor * 0.9));
+                const spreadDelay = Math.max(8, Math.round(60 / Math.max(0.25, simConfig.dryingSpeed)));
+                for (let s = 1; s <= spreadSteps; s++) {
+                    // each step slightly delayed to emulate capillary spread over time
+                    (function(step) {
+                        setTimeout(() => {
+                            // create a simple faded blob clone for the spread and queue as wet blob
+                            const stepT = step / spreadSteps; // [0..1]
+                            const driftX = vx * 0.3 * stepT + (Math.random() - 0.5) * 8;
+                            const driftY = vy * 0.3 * stepT + (Math.random() - 0.5) * 8;
+                            // reuse the same offscreen canvas but push as a new queued instance
+                            if (!watercolorWetCanvas || !wetCtx) {
+                                // fallback: draw spread directly into dry canvas
+                                wcCtx.save();
+                                wcCtx.globalCompositeOperation = 'multiply';
+                                wcCtx.filter = `blur(${2 + stepT * 6}px)`;
+                                wcCtx.globalAlpha = 0.04 * (1 - stepT);
+                                wcCtx.fillStyle = hexToRgba(currentDrawColor, basePaintAlpha * 0.6);
+                                const sRadius = baseBrushRadius * (1 + stepT * 1.6) + Math.random() * 6;
+                                const driftX2 = vx * 0.3 * stepT + (Math.random() - 0.5) * 8;
+                                const driftY2 = vy * 0.3 * stepT + (Math.random() - 0.5) * 8;
+                                createIrregularShape(wcCtx, x + driftX2, y + driftY2, sRadius);
+                                wcCtx.fill();
+                                wcCtx.filter = 'none';
+                                wcCtx.restore();
+                            } else {
+                                window._activeWetBlobs.push({
+                                canvas: off,
+                                x: drawX + driftX,
+                                y: drawY + driftY,
+                                w: cx * 2 * (1 + stepT * 0.8),
+                                h: cy * 2 * (1 + stepT * 0.8),
+                                createdAt: performance.now(),
+                                lifespan: Math.max(250, Math.round(lifespan * (0.4 + stepT * 0.9))),
+                                initialAlpha: Math.max(0.02, 0.04 * (1 - stepT)),
+                                composite: 'multiply',
+                                ephemeral: !!simConfig.ephemeral,
+                                spreadExtra: stepT * 0.4
+                                });
+                            }
+                        }, step * spreadDelay);
+                    })(s);
+                }
+
+                wcCtx.restore();
+            }
+
+            // overlay event handlers (call window.performGpuInput for GPU side if available)
+            // Use pointer events for pressure/touch/stylus compatibility
+            watercolorCanvas.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                isDrawingLocal = true;
+                spreadStartTime = performance.now();
+                const rect = watercolorCanvas.getBoundingClientRect();
+                lastPointerX = e.clientX - rect.left;
+                lastPointerY = e.clientY - rect.top;
+                // pressure is supported on stylus and touch; fallback to 1
+                const pressureVal = (typeof e.pressure === 'number' && e.pressure > 0) ? e.pressure : 1.0;
+                // capture pointer so we continue receiving events if the pointer goes outside
+                try { watercolorCanvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+
+                drawWatercolorBlob(lastPointerX, lastPointerY, baseRadius, 0, 0, pressureVal);
+                // call GPU input if GPU has been initialized
+                try { window.performGpuInput(e); } catch (err) { /* ignore */ }
+                // spread animation loop
+                requestAnimationFrame(function spreadStep(ts) {
+                    if (!isDrawingLocal) return;
+                    const elapsed = ts - spreadStartTime;
+                    const progress = Math.min(elapsed / ANIMATION_DURATION, 1);
+                    const maxSpreadRadius = baseRadius * MAX_SPREAD_FACTOR;
+                    const currentSpreadRadius = baseRadius + (maxSpreadRadius - baseRadius) * progress;
+                    drawWatercolorBlob(lastPointerX, lastPointerY, currentSpreadRadius);
+                    if (progress < 1) requestAnimationFrame(spreadStep);
+                });
+            });
+
+            watercolorCanvas.addEventListener('pointermove', (e) => {
+                const now = Date.now();
+                if (now - lastMoveTime < THROTTLE_TIME) return;
+                lastMoveTime = now;
+                const rect = watercolorCanvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const vx = x - lastPointerX;
+                const vy = y - lastPointerY;
+                lastPointerX = x; lastPointerY = y;
+                if (!isDrawingLocal) return;
+                const elapsed = performance.now() - spreadStartTime;
+                const progress = Math.min(elapsed / ANIMATION_DURATION, 1);
+                const maxSpreadRadius = baseRadius * MAX_SPREAD_FACTOR;
+                const currentSpreadRadius = baseRadius + (maxSpreadRadius - baseRadius) * progress;
+                // take pointer pressure into account
+                const pressureVal = (typeof e.pressure === 'number' && e.pressure > 0) ? e.pressure : 1.0;
+                drawWatercolorBlob(x, y, currentSpreadRadius, vx, vy, pressureVal);
+                try { window.performGpuInput(e); } catch (err) { /* ignore */ }
+            });
+
+            function pointerUpHandler(e) {
+                try { watercolorCanvas.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+                isDrawingLocal = false;
+            }
+
+            watercolorCanvas.addEventListener('pointerup', pointerUpHandler);
+            watercolorCanvas.addEventListener('pointercancel', pointerUpHandler);
+
+            clearButton.addEventListener('click', () => {
+                // clear overlay immediately (both dry and wet layers)
+                wcCtx.clearRect(0, 0, watercolorCanvas.width, watercolorCanvas.height);
+                wcCtx.fillStyle = 'black'; wcCtx.fillRect(0, 0, watercolorCanvas.width, watercolorCanvas.height);
+                if (wetCtx && watercolorWetCanvas) {
+                    wetCtx.clearRect(0, 0, watercolorWetCanvas.width, watercolorWetCanvas.height);
+                    if (window._activeWetBlobs) window._activeWetBlobs.length = 0;
+                }
+                // if GPU textures available, reinitialize them via globals
+                if (deviceGlobal && inputSimTextureGlobal && outputSimTextureGlobal && initialDataGlobal) {
+                    deviceGlobal.queue.writeTexture({ texture: inputSimTextureGlobal }, initialDataGlobal, { bytesPerRow: SIM_SIZE * 4 * 4 }, { width: SIM_SIZE, height: SIM_SIZE });
+                    deviceGlobal.queue.writeTexture({ texture: outputSimTextureGlobal }, initialDataGlobal, { bytesPerRow: SIM_SIZE * 4 * 4 }, { width: SIM_SIZE, height: SIM_SIZE });
+                }
+            });
+
+            // 홈 버튼: index.html로 이동
+            const homeButton = document.getElementById('homeButton');
+            if (homeButton) {
+                homeButton.addEventListener('click', () => {
+                    // navigate to main index page
+                    window.location.href = 'index.html';
+                });
+            }
+
+            // share / export UI removed — saving and sharing disabled
+
+            // GIF recording removed (feature disabled)
+
+            // create palette and initial layout
+            createColorPaletteTop();
+            resizeOverlay();
+            // pointer follow so colorPointer follows mouse (visible even when cursor hidden)
+            document.addEventListener('mousemove', (e) => {
+                colorPointer.style.left = `${e.clientX}px`;
+                colorPointer.style.top = `${e.clientY}px`;
+            });
+
+            // wheel rotates the visible palette
+            colorWheelContainer.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const rotationSpeed = 15; // degrees per wheel step
+                rotationAngle += (e.deltaY > 0 ? -rotationSpeed : rotationSpeed);
+                rotationAngle = rotationAngle % 360;
+                colorPalette.style.transform = `rotate(${rotationAngle}deg)`;
+            });
+            // advanced controls removed - settings are fixed above and not user-editable
+
+            // update internal runtime constants when simConfig changes (applied per-draw)
+
+            window.addEventListener('resize', resizeOverlay);
+        })();
 
         // 시뮬레이션 컴퓨트 셰이더 (반응-확산)
         const simulationShaderWGSL = `
@@ -229,7 +1028,7 @@
         `;
 
         // 마우스 입력 컴퓨트 셰이더 (클릭 위치에 물감 주입)
-        const inputShaderWGSL = `
+            const inputShaderWGSL = `
             struct InputParams {
                 inputX: f32;
                 inputY: f32;
@@ -237,6 +1036,7 @@
                 colorR: f32;
                 colorG: f32;
                 colorB: f32;
+                pressure: f32; // pointer pressure (0..1)
             };
 
             @group(0) @binding(0) var<uniform> params: InputParams;
@@ -261,14 +1061,14 @@
 
                 if (dist < brush_radius_px) {
                     // 브러시 내부에서 물감 농도 C와 습도 W를 주입
-                    let strength = 1.0 - smoothstep(0.0, brush_radius_px, dist); // 중심부 강하게
+                    let strength = (1.0 - smoothstep(0.0, brush_radius_px, dist)) * params.pressure; // pressure-affected strength
 
                     // 기존 물감 위에 새 물감을 덧칠하고, 물(W)도 주입
                     // 새로운 C = (이전 C * (1-strength)) + (새로운 물감 * strength)
                     // 새로운 W = (이전 W * (1-strength)) + (새로운 물 * strength * 0.5)
                     // 단순화: 그냥 강한 값으로 덮어씀 (C는 RGB값 사용, W는 고정값)
-                    finalC = clamp(current_values.x + strength * 0.2, 0.0, 1.0); // 물감 농도 증가
-                    finalW = clamp(current_values.y + strength * 0.5, 0.0, 1.0); // 물 추가
+                    finalC = clamp(current_values.x + strength * 0.3, 0.0, 1.0); // pressure increases pigment deposit
+                    finalW = clamp(current_values.y + strength * 0.6, 0.0, 1.0); // water added scaled by pressure
                 }
 
                 textureStore(outputSim, coord, vec4<f32>(finalC, finalW, 0.0, 1.0));
@@ -360,12 +1160,15 @@
             let inputSimTexture = device.createTexture({
                 size: [SIM_SIZE, SIM_SIZE],
                 format: simTextureFormat,
-                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
+                // 이 텍스처는 셰이더에서 읽기/쓰기(STORAGE_BINDING)와 샘플링(TEXTURE_BINDING)
+                // 초기화나 clear에 사용할 수 있도록 COPY_DST도 허용해야 writeTexture를 사용할 수 있습니다.
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_DST,
             });
             let outputSimTexture = device.createTexture({
                 size: [SIM_SIZE, SIM_SIZE],
                 format: simTextureFormat,
-                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
+                // output 텍스처 또한 GPU에서 쓰고(copy로 초기화) 셰이더에서 읽고 쓸 수 있어야 합니다.
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_DST,
             });
 
             // 텍스처 뷰 (바인드 그룹에 사용)
@@ -405,12 +1208,12 @@
             device.queue.writeBuffer(simParamsBuffer, 0, simParamsData);
 
             // Input Params Uniform Buffer (마우스 입력)
-            const inputParamsBufferSize = (6 * Float32Array.BYTES_PER_ELEMENT); // x, y, radius, r, g, b
+            const inputParamsBufferSize = (7 * Float32Array.BYTES_PER_ELEMENT); // x, y, radius, r, g, b, pressure
             const inputParamsBuffer = device.createBuffer({
                 size: inputParamsBufferSize,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
-            const inputParamsData = new Float32Array([0, 0, 0.05, 1, 0, 0]); // 초기값: x, y, radius, r, g, b
+            const inputParamsData = new Float32Array([0, 0, 0.025, 1, 0, 0, 1.0]); // 초기값: x,y,radius, r,g,b, pressure
             device.queue.writeBuffer(inputParamsBuffer, 0, inputParamsData);
 
             // Current Color Uniform Buffer (렌더링)
@@ -419,8 +1222,9 @@
                 size: currentColorBufferSize,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
-            const currentColorData = hexToRgbaArray('#9E1111'); // 초기 색상
-            device.queue.writeBuffer(currentColorBuffer, 0, currentColorData);
+            const currentColorData = hexToRgbaArray('#9E1111'); // 초기 색상 (JS 배열)
+            // writeBuffer는 ArrayBuffer/TypedArray를 기대하므로 Float32Array로 전달합니다.
+            device.queue.writeBuffer(currentColorBuffer, 0, new Float32Array(currentColorData));
 
 
             // ===== Compute Pipelines =====
@@ -524,7 +1328,7 @@
 
             // ===== Animation Loop =====
             let isDrawing = false;
-            let currentBrushRadius = 0.05; // 캔버스 너비 대비 비율 (초기값)
+            let currentBrushRadius = 0.025; // 캔버스 너비 대비 비율 (초기값) (halved)
             const MAX_BRUSH_RADIUS = 0.15; // 최대 브러시 크기 (캔버스 너비 대비)
             const BRUSH_GROW_SPEED = 0.0002; // 마우스 누르는 동안 브러시 커지는 속도
 
@@ -600,18 +1404,28 @@
             // ===== Event Listeners =====
             canvas.addEventListener('mousedown', (e) => {
                 isDrawing = true;
-                currentBrushRadius = 0.05; // 클릭 시 초기 브러시 크기
+                currentBrushRadius = 0.025; // 클릭 시 초기 브러시 크기 (halved to match overlay)
                 handleMouseMove(e); // 첫 클릭 위치에 바로 그리기
+            });
+
+            // pointer events for stylus/touch
+            canvas.addEventListener('pointerdown', (e) => {
+                isDrawing = true;
+                currentBrushRadius = 0.025;
+                try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+                handleMouseMove(e);
             });
 
             document.addEventListener('mouseup', () => {
                 isDrawing = false;
             });
 
+            document.addEventListener('pointerup', () => { isDrawing = false; });
+
             canvas.addEventListener('mousemove', handleMouseMove);
 
-            function handleMouseMove(e) {
-                if (!isDrawing) return;
+            function handleMouseMove(e, force = false) {
+                if (!isDrawing && !force) return;
 
                 // 브러시 크기 성장
                 currentBrushRadius = Math.min(currentBrushRadius + BRUSH_GROW_SPEED, MAX_BRUSH_RADIUS);
@@ -621,9 +1435,13 @@
                 const mouseY = (e.clientY - rect.top) / rect.height; // 0.0 to 1.0
 
                 // Update Input Params Buffer
+                // Use the currently selected color from the top-level UI if available
+                const selectedHex = window.currentDrawColorGlobal || '#9E1111';
+                const rgb = hexToRgbaArray(selectedHex);
+                const pressureVal = (typeof e.pressure === 'number' && e.pressure > 0) ? e.pressure : 1.0;
                 const inputParamsUpdatedData = new Float32Array([
-                    mouseX, mouseY, currentBrushRadius, 
-                    currentColorData[0], currentColorData[1], currentColorData[2]
+                    mouseX, mouseY, currentBrushRadius,
+                    rgb[0], rgb[1], rgb[2], pressureVal
                 ]);
                 device.queue.writeBuffer(inputParamsBuffer, 0, inputParamsUpdatedData);
 
@@ -654,83 +1472,25 @@
             }
 
 
-            // ===== UI Elements (Color Wheel, Clear Button) =====
-            const colorWheelContainer = document.getElementById('colorWheelContainer');
-            const colorPointer = document.getElementById('colorPointer');
-            const colorPalette = document.getElementById('colorPalette');
-            const hoverTextDisplay = document.getElementById('hoverTextDisplay'); 
-            const clearButton = document.getElementById('clearButton');
+            // Expose GPU objects to top-level UI (so color selection / clear work when GPU is ready)
+            deviceGlobal = device;
+            currentColorBufferGlobal = currentColorBuffer;
+            inputParamsBufferGlobal = inputParamsBuffer;
+            inputSimTextureGlobal = inputSimTexture;
+            outputSimTextureGlobal = outputSimTexture;
+            initialDataGlobal = initialData;
 
-            let paletteRotationAngle = 0;
-            const NUM_BUTTONS = 18;
-            const BUTTON_RADIUS = 120; 
-            const BUTTON_SIZE = 60; 
-            const COLORS = [
-                '#9E1111', '#CD0000', '#E53935', '#FF7043', '#FFB74D', '#FDD835',
-                '#8BC34A', '#4CAF50', '#009688', '#00BCD4', '#03A9F4', '#1976D2',
-                '#5C6BC0', '#7E57C2', '#AB47BC', '#EC407A', '#FF8A80', '#FFFFFF'
-            ];
+            // Allow top-level UI to call into GPU draw handler
+            window.performGpuInput = function(e) {
+                try { handleMouseMove(e, true); } catch (err) { /* ignore if handler not ready */ }
+            };
 
-            // Create circular color buttons
-            function createColorPalette() {
-                colorPalette.innerHTML = '';
-                for (let i = 0; i < NUM_BUTTONS; i++) {
-                    const angle = (i / NUM_BUTTONS) * Math.PI * 2 + paletteRotationAngle;
-                    const btn = document.createElement('div');
-                    btn.className = 'color-button';
-                    // place buttons around a circle using transforms
-                    const x = Math.cos(angle) * BUTTON_RADIUS;
-                    const y = Math.sin(angle) * BUTTON_RADIUS;
-                    btn.style.left = `calc(50% + ${x}px - ${BUTTON_SIZE / 2}px)`;
-                    btn.style.top = `calc(50% + ${y}px - ${BUTTON_SIZE / 2}px)`;
-                    const color = COLORS[i % COLORS.length];
-                    btn.style.background = color;
-                    // Keep the button visually upright when palette rotates
-                    btn.style.setProperty('--initial-rotation-compensate', `${-paletteRotationAngle}rad`);
-
-                    // Hover tooltip
-                    btn.addEventListener('mouseenter', () => {
-                        hoverTextDisplay.style.opacity = '1';
-                        hoverTextDisplay.textContent = color;
-                        setTimeout(() => { hoverTextDisplay.style.opacity = '0'; }, 900);
-                    });
-
-                    // Click -> select color
-                    btn.addEventListener('click', () => {
-                        currentColorData = hexToRgbaArray(color);
-                        device.queue.writeBuffer(currentColorBuffer, 0, new Float32Array(currentColorData));
-                        colorPointer.style.backgroundColor = color;
-                    });
-
-                    colorPalette.appendChild(btn);
-                }
+            // Ensure the GPU uniform buffer is in-sync with any color already selected by the UI
+            if (window.currentDrawColorGlobal) {
+                try {
+                    device.queue.writeBuffer(currentColorBuffer, 0, new Float32Array(hexToRgbaArray(window.currentDrawColorGlobal)));
+                } catch (err) { /* non-fatal */ }
             }
-
-            // Pointer follows the mouse and shows currently selected color
-            document.addEventListener('mousemove', (e) => {
-                colorPointer.style.left = `${e.clientX}px`;
-                colorPointer.style.top = `${e.clientY}px`;
-            });
-
-            // Clear simulation — reinitialize both simulation textures
-            clearButton.addEventListener('click', () => {
-                // Reset textures to initial state (C=0.0, W=1.0)
-                device.queue.writeTexture(
-                    { texture: inputSimTexture },
-                    initialData,
-                    { bytesPerRow: SIM_SIZE * 4 * 4 },
-                    { width: SIM_SIZE, height: SIM_SIZE }
-                );
-                device.queue.writeTexture(
-                    { texture: outputSimTexture },
-                    initialData,
-                    { bytesPerRow: SIM_SIZE * 4 * 4 },
-                    { width: SIM_SIZE, height: SIM_SIZE }
-                );
-            });
-
-            // Initialize UI and start simulation loop
-            createColorPalette();
 
             // Start the frame loop
             requestAnimationFrame(frame);

@@ -3,10 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 수채화 드로잉 웹사이트 (JPG/GIF 저장 및 공유)</title>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <title>ELEMENTAL GLOW</title>
 
     <style>
         body, html {
@@ -68,8 +65,11 @@
             flex-grow: 1; /* 버튼 너비 균등 분배 */
         }
 
+        /* hover inverts background/text for better feedback */
         #controls button:hover {
-            background-color: #333333; 
+            background-color: #ffffff;
+            color: #000000;
+            box-shadow: 0 0 0 1px rgba(0,0,0,0.08) inset;
         }
         
         #controls button:disabled {
@@ -154,7 +154,7 @@
         }
         #hoverTextDisplay {
             position: absolute; top: 50%; left: 10px; transform: translateY(-50%);
-            padding: 5px 10px; background-color: transparent; color: black; 
+            padding: 5px 10px; background-color: transparent; color: #fff; 
             border-radius: 4px; font-family: sans-serif; font-size: 18px; 
             font-weight: bold; pointer-events: none; opacity: 0; transition: opacity 0.2s;
             z-index: 10; box-shadow: none; 
@@ -163,15 +163,13 @@
 </head>
 <body>
     <div id="app">
-        <canvas id="watercolorCanvas"></canvas>
-        
-        <div id="controls">
-            <button id="clearButton">캔버스 초기화</button>
-            <button id="saveJpgButton">JPG 저장</button>
-            <button id="saveGifButton">GIF 저장</button>
-            <button id="qrButton">QR 코드 생성</button>
-            <button id="linkButton">공유 링크 복사</button>
+        <div id="shareCard">
+            <div id="imageFrame">
+                <img id="sharedImage" alt="Shared drawing" />
+            </div>
         </div>
+        
+        <!-- control buttons removed: saving and sharing are disabled -->
     </div>
     
     <div id="colorWheelContainer">
@@ -195,10 +193,7 @@
         const canvas = document.getElementById('watercolorCanvas');
         const ctx = canvas.getContext('2d');
         // ... (기타 DOM 요소 변수 선언)
-        const qrButton = document.getElementById('qrButton');
-        const linkButton = document.getElementById('linkButton');
-        const saveJpgButton = document.getElementById('saveJpgButton');
-        const saveGifButton = document.getElementById('saveGifButton');
+        // save/share controls removed
         const modal = document.getElementById('modal');
         const qrcodeContainer = document.getElementById('qrcodeContainer');
         const modalMessage = document.getElementById('modalMessage');
@@ -214,10 +209,7 @@
         let currentDrawColor = '#9E1111'; 
         let isDrawing = false; 
         // ... (드로잉 관련 변수, 함수: hexToRgba, resizeCanvas, clearCanvas, createColorPalette, drawWatercolorBlob, createIrregularShape 등은 원본 코드를 그대로 유지)
-        // [IMPORTANT] GIF 녹화를 위해 캔버스 상태를 저장할 배열 추가
-        let drawingFrames = [];
-        const FRAME_RATE = 50; // 밀리초당 프레임 (20fps)
-        let lastFrameTime = 0;
+        // save/share features removed from this page (view-only)
 
         // ------------------------------------------------------------------
         // 드로잉 로직을 포함하여 재정의 (GIF 녹화 로직 추가)
@@ -239,33 +231,17 @@
 
         function clearCanvas() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = 'white';
+            ctx.fillStyle = 'black';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            drawingFrames = []; // 캔버스 초기화 시 프레임 초기화
         }
 
         // ... (createColorPalette 함수는 생략 - 기존 로직 유지)
 
         // [수정] 드로잉 이벤트 핸들러 (프레임 저장 로직 추가)
-        document.addEventListener('mousemove', (e) => {
-            // ... (기존 마우스 이동 및 드로잉 로직 유지)
-            // ... (드로잉 완료 후 프레임 저장)
-            if (isDrawing) {
-                const now = Date.now();
-                if (now - lastFrameTime > FRAME_RATE) {
-                    // 현재 캔버스 상태를 프레임으로 저장
-                    drawingFrames.push(canvas.toDataURL('image/png'));
-                    lastFrameTime = now;
-                }
-            }
-        });
+        // view-only page: interactive drawing frame-capture removed
 
         // [수정] mousedown 핸들러 (프레임 저장 로직 초기화)
-        canvas.addEventListener('mousedown', (e) => {
-            // ... (기존 mousedown 로직 유지)
-            drawingFrames = []; // 새 드로잉 시작 시 프레임 초기화
-            lastFrameTime = performance.now();
-        });
+        // view-only page: drawing handlers removed
         
         // ... (mouseup, wheel 이벤트 핸들러 및 drawWatercolorBlob, createIrregularShape 함수는 생략 - 기존 로직 유지)
         
@@ -275,131 +251,7 @@
         
         // (***모든 드로잉 및 UI 로직은 원본 파일의 설정을 유지합니다.***)
 
-        // ==================================================================
-        // === [추가] 공유 및 저장 기능 로직 ===
-        // ==================================================================
-
-        /**
-         * 캔버스 내용을 JPG 파일로 다운로드합니다.
-         */
-        function saveAsJPG() {
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.9); // 품질 90%
-            downloadFile(dataUrl, 'my_watercolor_drawing.jpg');
-        }
-
-        /**
-         * 녹화된 프레임을 사용하여 GIF 애니메이션을 생성하고 다운로드합니다.
-         */
-        function saveAsGIF() {
-            if (drawingFrames.length === 0) {
-                alert('그려진 내용이 없습니다. 드로잉 후 다시 시도해 주세요.');
-                return;
-            }
-
-            // GIF 생성 중 UI 비활성화
-            saveGifButton.disabled = true;
-            qrButton.disabled = true;
-            linkButton.disabled = true;
-            modalCloseButton.disabled = true;
-            modalMessage.textContent = 'GIF 애니메이션을 생성하는 중입니다... (시간이 걸릴 수 있습니다)';
-            progressContainer.style.display = 'block';
-            modal.style.display = 'flex';
-            
-            progressBar.style.width = '0%';
-            
-            // gif.js 인스턴스 생성
-            const gif = new GIF({
-                workers: 2,
-                quality: 10, // 품질 낮춰서 파일 크기/속도 개선
-                width: canvas.width,
-                height: canvas.height,
-                background: '#ffffff'
-            });
-
-            drawingFrames.forEach((frameUrl, index) => {
-                const img = new Image();
-                img.src = frameUrl;
-                // 각 프레임 추가 (딜레이는 프레임 레이트에 따라 설정)
-                gif.addFrame(img, { delay: FRAME_RATE });
-            });
-
-            gif.on('progress', function(p) {
-                progressBar.style.width = `${Math.round(p * 100)}%`;
-            });
-
-            gif.on('finished', function(blob) {
-                const url = URL.createObjectURL(blob);
-                downloadFile(url, 'my_watercolor_animation.gif');
-                
-                // 완료 후 UI 복구
-                modalMessage.textContent = 'GIF 저장이 완료되었습니다. 다운로드를 확인하세요.';
-                progressContainer.style.display = 'none';
-                saveGifButton.disabled = false;
-                qrButton.disabled = false;
-                linkButton.disabled = false;
-                modalCloseButton.disabled = false;
-            });
-
-            gif.render();
-        }
-
-        /**
-         * Data URL 또는 Blob URL을 사용하여 파일을 다운로드합니다.
-         */
-        function downloadFile(url, filename) {
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-        }
-
-        /**
-         * 캡처된 캔버스 이미지 URL을 사용하여 QR 코드를 생성합니다.
-         */
-        function generateQRCode() {
-            // Data URL을 직접 인코딩하는 것은 권장되지 않지만, 클라이언트 환경 테스트를 위해 사용합니다.
-            const dataUrl = canvas.toDataURL('image/png');
-            
-            modalMessage.textContent = '아래 QR 코드를 스캔하여 이미지를 확인하세요.';
-            qrcodeContainer.innerHTML = ''; 
-            progressContainer.style.display = 'none';
-            
-            if (typeof QRCode !== 'undefined') {
-                new QRCode(qrcodeContainer, {
-                    text: dataUrl,
-                    width: 256,
-                    height: 256,
-                    colorDark : "#000000",
-                    colorLight : "#ffffff",
-                    correctLevel : QRCode.CorrectLevel.M
-                });
-            } else {
-                modalMessage.innerHTML = 'QR 코드 라이브러리가 로드되지 않았습니다.';
-            }
-
-            modal.style.display = 'flex';
-        }
-
-        /**
-         * 캡처된 캔버스 이미지 URL을 클립보드에 복사합니다.
-         */
-        function copyShareLink() {
-            const dataUrl = canvas.toDataURL('image/png');
-            
-            navigator.clipboard.writeText(dataUrl).then(() => {
-                modalMessage.textContent = '✅ 드로잉 이미지 링크 (Data URL)가 클립보드에 복사되었습니다.';
-                qrcodeContainer.innerHTML = '';
-                progressContainer.style.display = 'none';
-                modal.style.display = 'flex';
-            }).catch(err => {
-                modalMessage.textContent = '링크 복사 실패: ' + err;
-                qrcodeContainer.innerHTML = '';
-                progressContainer.style.display = 'none';
-                modal.style.display = 'flex';
-            });
-        }
+        // save/share functions removed
         
         // ==================================================================
         // === 이벤트 리스너 연결 ===
@@ -408,15 +260,54 @@
         // [기존]
         document.getElementById('clearButton').addEventListener('click', clearCanvas);
         
-        // [추가]
-        saveJpgButton.addEventListener('click', saveAsJPG);
-        saveGifButton.addEventListener('click', saveAsGIF);
-        qrButton.addEventListener('click', generateQRCode);
-        linkButton.addEventListener('click', copyShareLink);
+        // save/share buttons removed — no event handlers
         
         // 초기화
         resizeCanvas();
 
+    </script>
+    <script>
+        // When redirected here, simulation.html stores a dataURL in sessionStorage.sharedDrawing
+        (function() {
+            const dataUrl = sessionStorage.getItem('sharedDrawing');
+            const imgEl = document.getElementById('sharedImage');
+            const app = document.getElementById('app');
+            if (!dataUrl) {
+                // fallback UI - show message
+                app.innerHTML = '<div style="padding:40px;font-size:20px;color:#333">공유할 이미지가 없습니다. 이전 페이지에서 그림을 저장한 뒤 공유 버튼을 누르세요.</div>';
+                return;
+            }
+
+            imgEl.src = dataUrl;
+
+            // Add card background and subtle shadow to mimic screenshot-on-paper look
+            document.body.style.background = 'repeating-linear-gradient( -45deg, #f0f0f0 0, #f0f0f0 6px, #f6f6f6 6px, #f6f6f6 12px)';
+            const card = document.getElementById('shareCard');
+            card.style.display = 'flex';
+            card.style.justifyContent = 'center';
+            card.style.alignItems = 'center';
+            card.style.width = '80%';
+            card.style.maxWidth = '1100px';
+            card.style.height = '70%';
+            card.style.margin = '50px auto';
+            card.style.borderRadius = '14px';
+            card.style.boxShadow = '0 16px 40px rgba(0,0,0,0.25)';
+            card.style.background = 'linear-gradient(180deg,#fff,#fff)';
+            card.style.overflow = 'hidden';
+
+            const frame = document.getElementById('imageFrame');
+            frame.style.width = '95%'; frame.style.height = '92%';
+            frame.style.borderRadius = '10px';
+            frame.style.margin = 'auto';
+            frame.style.background = 'white';
+            frame.style.display = 'flex';
+            frame.style.justifyContent = 'center';
+            frame.style.alignItems = 'center';
+
+            imgEl.style.maxWidth = '100%';
+            imgEl.style.maxHeight = '100%';
+            imgEl.style.objectFit = 'contain';
+        })();
     </script>
 </body>
 </html>

@@ -39,16 +39,55 @@
       color: rgba(70, 80, 100, 0.95);
       letter-spacing: 6px;
       opacity: 0;
-      transition: opacity 0.9s ease;
+      transition: opacity 4.0s ease, transform 4.0s ease; /* slower fade + gentle entrance (now 4s) */
     }
 
     .logo.visible {
       opacity: 1;
+      /* slight upward nudge when visible to feel gentle — final transform tuned by CSS animation */
+      transform: translate(-50%, -50%) translateY(-6px);
+    }
+
+    /* subtle floating motion when visible */
+    .logo.visible {
+      animation: logoFloat 4.6s ease-in-out infinite;
+    }
+
+    @keyframes logoFloat {
+      0% { transform: translate(-50%, -50%) translateY(0); }
+      50% { transform: translate(-50%, -50%) translateY(-10px); }
+      100% { transform: translate(-50%, -50%) translateY(0); }
+    }
+
+    /* moving shimmer / wave overlay on the logo text */
+    .logo::before {
+      content: '';
+      position: absolute;
+      left: -50%; top: 0; width: 200%; height: 100%;
+      background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0) 100%);
+      transform: translateX(-100%);
+      filter: blur(10px);
+      pointer-events: none;
+      opacity: 0.9;
+      transition: none;
+      mix-blend-mode: overlay;
+      border-radius: 6px;
+    }
+
+    .logo.visible::before {
+      animation: logoWave 3.8s linear infinite;
+    }
+
+    @keyframes logoWave {
+      0% { transform: translateX(-110%); opacity: 0; }
+      20% { opacity: 0.9; }
+      60% { transform: translateX(60%); opacity: 0.8; }
+      100% { transform: translateX(160%); opacity: 0; }
     }
 
     .btn-start {
       position: absolute;
-      bottom: 60px;
+      bottom: 140px; /* moved slightly higher */
       left: 50%;
       transform: translateX(-50%);
       width: 164px;
@@ -127,7 +166,30 @@
       if (Math.random() < 0.2) createRipple(e.clientX, e.clientY);
     });
 
-    // First click anywhere: reveal logo and show START button
+    // Show logo and START button automatically when the page loads
+    document.addEventListener('DOMContentLoaded', () => {
+      const logo = document.querySelector('.logo');
+      const btn = document.querySelector('.btn-start');
+      if (logo && !logo.classList.contains('visible')) {
+        // gentle appear
+        logo.classList.add('visible');
+        // create a few soft ripples centered around the logo to emphasize a 'water' feel
+        try {
+          const rRect = logo.getBoundingClientRect();
+          const cx = rRect.left + rRect.width / 2;
+          const cy = rRect.top + rRect.height / 2;
+          // emit a few delayed ripples
+          for (let i = 0; i < 4; i++) {
+            setTimeout(() => createRipple(cx + (Math.random()-0.5)*40, cy + (Math.random()-0.5)*20), 140*i);
+          }
+        } catch (e) { /* ignore if DOM not ready */ }
+
+        // show START button after the slower logo fade finished
+        setTimeout(() => { if (btn) btn.classList.add('show'); }, 4000);
+      }
+    });
+
+    // First click anywhere: reveal logo and show START button (fallback if it wasn't visible)
     let navigating = false;
     document.addEventListener("click", e => {
       const logo = document.querySelector('.logo');
@@ -139,7 +201,7 @@
         }
         logo.classList.add('visible');
         // show button after logo fade-in completes
-        setTimeout(() => { if (btn) btn.classList.add('show'); }, 900);
+        setTimeout(() => { if (btn) btn.classList.add('show'); }, 4000);
         return;
       }
     });
