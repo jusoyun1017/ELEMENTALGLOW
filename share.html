@@ -15,7 +15,7 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            cursor: none; 
+            cursor: default;
         }
 
         #app {
@@ -145,13 +145,7 @@
             transform: scale(1.1) rotate(var(--initial-rotation-compensate, 0deg)); 
             box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.8), 0 0 15px rgba(0, 0, 0, 0.6); z-index: 2; 
         }
-        #colorPointer {
-            position: fixed; width: 40px; height: 40px; border-radius: 50%;
-            background-color: #00bcd4; border: 4px solid white;
-            box-shadow: 0 0 0 2px #00bcd4, 0 4px 10px rgba(0, 0, 0, 0.2);
-            transition: background-color 0.2s; z-index: 9999; 
-            transform: translate(-50%, -50%); pointer-events: none; 
-        }
+        /* colorPointer removed for share view (no circular cursor) */
         #hoverTextDisplay {
             position: absolute; top: 50%; left: 10px; transform: translateY(-50%);
             padding: 5px 10px; background-color: transparent; color: #fff; 
@@ -176,8 +170,6 @@
         <div id="colorPalette"></div>
         <div id="hoverTextDisplay"></div>
     </div>
-    
-    <div id="colorPointer"></div> 
 
     <div id="modal">
         <div id="modalContent">
@@ -231,7 +223,7 @@
 
         function clearCanvas() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = 'black';
+                ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
 
@@ -307,6 +299,64 @@
             imgEl.style.maxWidth = '100%';
             imgEl.style.maxHeight = '100%';
             imgEl.style.objectFit = 'contain';
+
+            // add visible download area (QR + download link)
+            const downloadArea = document.createElement('div');
+            downloadArea.id = 'downloadArea';
+            downloadArea.style.cssText = 'position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%); z-index: 30; display: flex; gap: 12px; align-items: center;';
+            app.appendChild(downloadArea);
+
+            // helper: convert dataURL to Blob
+            function dataURLToBlob(dataURL) {
+                const parts = dataURL.split(',');
+                const mime = parts[0].match(/:(.*?);/)[1];
+                const binary = atob(parts[1]);
+                const array = [];
+                for (let i = 0; i < binary.length; i++) array.push(binary.charCodeAt(i));
+                return new Blob([new Uint8Array(array)], { type: mime });
+            }
+
+            // create JPEG download and add navigation buttons (no QR)
+            imgEl.addEventListener('load', () => {
+                try {
+                    const off = document.createElement('canvas');
+                    off.width = imgEl.naturalWidth || imgEl.width || 800;
+                    off.height = imgEl.naturalHeight || imgEl.height || 600;
+                    const ox = off.getContext('2d');
+                    ox.fillStyle = '#ffffff'; ox.fillRect(0,0,off.width,off.height);
+                    ox.drawImage(imgEl, 0, 0, off.width, off.height);
+                    const jpegDataUrl = off.toDataURL('image/jpeg', 0.9);
+
+                    // create download link
+                    const downloadLink = document.createElement('a');
+                    downloadLink.textContent = '다운로드';
+                    downloadLink.style.cssText = 'display:inline-block;padding:10px 14px;background:#222;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;';
+                    const blob = dataURLToBlob(jpegDataUrl);
+                    const blobUrl = URL.createObjectURL(blob);
+                    downloadLink.href = blobUrl;
+                    downloadLink.download = 'drawing.jpg';
+                    downloadArea.appendChild(downloadLink);
+
+                    // MAIN 버튼: 메인 화면으로 이동 (index.html)
+                    const mainLink = document.createElement('a');
+                    mainLink.textContent = 'MAIN';
+                    mainLink.href = 'index.html';
+                    // fixed at the bottom-right corner
+                    mainLink.style.cssText = 'position:fixed; right:20px; bottom:20px; z-index:40; display:inline-block;padding:10px 14px;background:#666;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;';
+                    // append to body so it doesn't flow in the centered download area
+                    document.body.appendChild(mainLink);
+
+                    // 다시 그리기 버튼: 시뮬레이션 페이지로 이동
+                    const redoLink = document.createElement('a');
+                    redoLink.textContent = '다시 그리기';
+                    redoLink.href = 'simulation.html';
+                    redoLink.style.cssText = 'display:inline-block;padding:10px 14px;background:#0078d4;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;';
+                    downloadArea.appendChild(redoLink);
+
+                } catch (err) {
+                    console.warn('Download creation failed', err);
+                }
+            });
         })();
     </script>
 </body>

@@ -18,12 +18,17 @@
             font-family: sans-serif;
         }
 
+        /* Application wrapper fills the viewport */
         #app {
-            position: relative;
-            width: 100vw; 
-            height: 100vh; 
+            /* ensure the app always fills the viewport and is pinned to the top-left
+               use fixed rather than relative so it isn't affected by body centering */
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100vw;
+            height: 100vh;
             background-color: white;
-            box-shadow: none; 
+            box-shadow: none;
             overflow: hidden;
         }
 
@@ -251,13 +256,12 @@
             <!-- share button removed -->
             <!-- GIF feature removed -->
         </div>
+        <div id="colorWheelContainer">
+            <div id="colorPalette"></div>
+            <div id="hoverTextDisplay"></div>
+        </div>
+        <div id="colorPointer"></div>
     </div>
-    
-    <div id="colorWheelContainer">
-        <div id="colorPalette"></div>
-        <div id="hoverTextDisplay"></div>
-    </div>
-    <div id="colorPointer"></div> 
 
     <script type="module">
         if (!navigator.gpu) {
@@ -295,9 +299,11 @@
             // Note: DOM elements exist in the HTML; just wire behavior here so it works even if GPU fails
             const watercolorCanvas = document.getElementById('watercolorCanvas');
             const wcCtx = watercolorCanvas?.getContext ? watercolorCanvas.getContext('2d') : null;
+            if (wcCtx) wcCtx.imageSmoothingEnabled = true;
             // wet layer canvas: holds transient wet pigment that dries into the dry layer
             const watercolorWetCanvas = document.getElementById('watercolorWetCanvas');
             const wetCtx = watercolorWetCanvas?.getContext ? watercolorWetCanvas.getContext('2d') : null;
+            if (wetCtx) wetCtx.imageSmoothingEnabled = true;
             const colorWheelContainer = document.getElementById('colorWheelContainer');
             const colorPointer = document.getElementById('colorPointer');
             const colorPalette = document.getElementById('colorPalette');
@@ -307,7 +313,9 @@
             if (!watercolorCanvas || !wcCtx || !colorPalette) return; // nothing to wire
 
             // base brush radius in CSS pixels — user requested to halve brush size
-            let baseRadius = 45; // was 90, reduced by 50%
+            // slightly smaller default brush for a cleaner single-stroke feel
+            let baseRadius = 72; // tuned down a bit from 90
+            let hasMovedSinceDown = false; // track whether pointer moved after down
             let currentDrawColor = COLORS[0] || '#9E1111';
             // expose for GPU input to read latest selected color
             window.currentDrawColorGlobal = currentDrawColor;
@@ -324,17 +332,28 @@
             // Simulation configuration (bound to UI sliders below)
             // Fixed simulation configuration (locked — advanced UI removed)
             const simConfig = {
-                brushSize: 45,
+                brushSize: 90,
+                // how strongly paint follows pointer motion (0..1)
+                flowStrength: 0.8,
                 spreadFactor: 2.6,
                 spreadDuration: ANIMATION_DURATION,
-                granulation: 0.5,
-                mixingStrength: 0.90,
+                granulation: 0.8,
+                // lower mixing strength to keep strokes luminous when layered
+                // reduced further so colors don't become muddy when layered
+                mixingStrength: 0.42,
                 dryingSpeed: 1.0,
-                paperStrength: 0.18,
+                paperStrength: 0.28,
                 detailed: true,
-                minOpacity: 0.20,
-                maxOpacity: 0.50,
-                ephemeral: false
+                minOpacity: 0.12,
+                maxOpacity: 0.85,
+                ephemeral: false,
+                // watercolor-specific options inspired by watercolor simulation techniques
+                wetOnWet: true,             // whether layers blend like wet-on-wet
+                backrunStrength: 0.14,      // strength of backrun/edge bleeds
+                pigmentSeparation: 0.06,    // color channel separation (chromatography-like)
+                washLayers: 2,              // number of quick wash passes to layer
+                bleedIntensity: 0.28,       // how strongly surrounding wash spreads
+                edgeDarken: 0.22            // extra darkening around edges for aggregation
             };
 
             function hexToRgba(hex, alpha) {
@@ -359,7 +378,7 @@
                 }
                 wcCtx.setTransform(ratio, 0, 0, ratio, 0, 0); // normalize CSS px -> canvas px
                 wcCtx.clearRect(0, 0, watercolorCanvas.clientWidth, watercolorCanvas.clientHeight);
-                wcCtx.fillStyle = 'black';
+                wcCtx.fillStyle = 'white';
                 wcCtx.fillRect(0, 0, watercolorCanvas.clientWidth, watercolorCanvas.clientHeight);
 
                 // draw subtle paper texture layer behind the strokes
@@ -383,17 +402,20 @@
                 octx.fillStyle = '#ffffff';
                 octx.fillRect(0, 0, pw, ph);
 
-                // speckle noise
+                // stronger speckle noise for visible paper granulation
                 const img = octx.createImageData(pw, ph);
                 for (let i = 0; i < img.data.length; i += 4) {
-                    const v = 230 + Math.floor(Math.random() * 25); // light gray specks
-                    img.data[i] = v; img.data[i+1] = v; img.data[i+2] = v; img.data[i+3] = 12; // very faint
+                    // biased toward lighter specks with occasional darker spots
+                    const base = 225 + Math.floor(Math.random() * 30);
+                    const darkChance = Math.random() < 0.02;
+                    const v = darkChance ? (200 + Math.floor(Math.random() * 40)) : base;
+                    img.data[i] = v; img.data[i+1] = v; img.data[i+2] = v; img.data[i+3] = darkChance ? 18 : 10;
                 }
                 octx.putImageData(img, 0, 0);
 
                 // subtle paper fibers (long thin strokes)
-                octx.globalAlpha = 0.06;
-                for (let i = 0; i < 150; i++) {
+                octx.globalAlpha = 0.08;
+                for (let i = 0; i < 240; i++) {
                     octx.beginPath();
                     const x1 = Math.random() * pw;
                     const y1 = Math.random() * ph;
@@ -402,91 +424,34 @@
                     const x2 = x1 + Math.cos(ang) * len;
                     const y2 = y1 + Math.sin(ang) * len;
                     octx.strokeStyle = `rgba(${210 + Math.floor(Math.random()*30)}, ${210 + Math.floor(Math.random()*30)}, ${210 + Math.floor(Math.random()*30)}, 1)`;
-                    octx.lineWidth = 0.8 + Math.random() * 1.5;
+                    octx.lineWidth = 0.8 + Math.random() * 2.2;
                     octx.moveTo(x1, y1);
                     octx.lineTo(x2, y2);
                     octx.stroke();
                 }
 
+                // occasional soft watermarks / stains
+                for (let i = 0; i < 8; i++) {
+                    const gx = Math.random() * pw;
+                    const gy = Math.random() * ph;
+                    const gr = 30 + Math.random() * 140;
+                    const gg = octx.createRadialGradient(gx, gy, gr * 0.2, gx, gy, gr);
+                    const v = 230 - Math.floor(Math.random() * 40);
+                    gg.addColorStop(0, `rgba(${v},${v},${v},${0.06 + Math.random() * 0.08})`);
+                    gg.addColorStop(1, 'rgba(255,255,255,0)');
+                    octx.fillStyle = gg;
+                    octx.beginPath();
+                    octx.arc(gx, gy, gr, 0, Math.PI * 2);
+                    octx.fill();
+                }
+
                 return oc;
             }
 
-            // in-memory queue of active wet blobs; each blob dries over time and is
-            // composited into the main watercolor canvas when finished
-            if (!window._activeWetBlobs) window._activeWetBlobs = [];
-
-            // limits to avoid unbounded memory use
-            const MAX_ACTIVE_WET_BLOBS = 180;
-
-            // per-frame wet-layer processor: render active wet blobs onto wet canvas,
-            // update drying progress and composite finished blobs into the dry canvas
-            function processWetLayer(now = performance.now()) {
-                if (!watercolorWetCanvas || !wetCtx) return;
-
-                // clear wet canvas each frame (keep paper and dry strokes beneath intact)
-                wetCtx.clearRect(0, 0, watercolorWetCanvas.clientWidth, watercolorWetCanvas.clientHeight);
-                // make sure wet canvas background is transparent when compositing over black dry canvas
-                // (no fill needed here) 
-
-                // draw each blob with appropriate alpha/blur based on age
-                for (let i = window._activeWetBlobs.length - 1; i >= 0; i--) {
-                    const b = window._activeWetBlobs[i];
-                    const age = Math.max(0, now - b.createdAt);
-                    const t = Math.min(1, age / b.lifespan);
-
-                    // progress-based expansion/blur to simulate diffusion
-                    const spread = 1 + t * (0.6 + (b.spreadExtra || 0));
-                    const drawW = b.w * spread;
-                    const drawH = b.h * spread;
-                    const dx = b.x - (drawW - b.w) / 2;
-                    const dy = b.y - (drawH - b.h) / 2;
-
-                    // compute alpha: decays while drying (but keep a minimum until final composite)
-                    const blobAlpha = b.initialAlpha * (1 - t * 0.92);
-
-                    wetCtx.save();
-                    wetCtx.globalCompositeOperation = b.composite || 'multiply';
-                    // increase blur slightly as it spreads
-                    wetCtx.filter = `blur(${Math.min(12, 1 + t * 8)}px)`;
-                    wetCtx.globalAlpha = Math.max(0.02, blobAlpha);
-                    wetCtx.drawImage(b.canvas, dx, dy, drawW, drawH);
-                    wetCtx.filter = 'none';
-                    wetCtx.restore();
-
-                    // finalize if dried (past lifespan)
-                    if (t >= 1) {
-                        // If ephemeral/fireworks mode is enabled on this blob or globally,
-                        // do not permanently composite into the dry canvas — let it fade/vanish.
-                        const shouldComposite = !(simConfig && simConfig.ephemeral) && !b.ephemeral;
-                        // composite into dry canvas (wcCtx) — treat as final paint deposit
-
-                        if (shouldComposite) {
-                            try {
-                                wcCtx.save();
-                                wcCtx.globalCompositeOperation = 'multiply';
-                                wcCtx.globalAlpha = Math.min(1, b.finalCompositeAlpha || b.initialAlpha * 0.92);
-                                wcCtx.filter = 'none';
-                                wcCtx.drawImage(b.canvas, b.x, b.y, b.w, b.h);
-                                wcCtx.restore();
-                            } catch (err) { /* ignore render errors */ }
-                        }
-
-                        // remove from active queue
-                        window._activeWetBlobs.splice(i, 1);
-                    }
-                }
-
-                // cap queue length to avoid runaway memory use
-                if (window._activeWetBlobs.length > MAX_ACTIVE_WET_BLOBS) {
-                    window._activeWetBlobs.splice(0, window._activeWetBlobs.length - MAX_ACTIVE_WET_BLOBS);
-                }
-
-                // schedule next frame
-                requestAnimationFrame(processWetLayer);
-            }
-
-            // start the wet-layer processing loop
-            requestAnimationFrame(processWetLayer);
+            // wet-layer animation removed: we now render watercolor effects directly
+            // onto the dry canvas (`wcCtx`) immediately (no queued wet animation).
+            // This simplifies the pipeline and ensures what the user draws is what
+            // ends up on the dry canvas without waiting for asynchronous drying.
 
             function drawPaperTexture() {
                 try {
@@ -608,26 +573,81 @@
             }
 
             // Draw a watercolor-like blob.
-            // Adds directionally-biased strokes (flow) based on pointer velocity (vx, vy)
-            // and schedules a subtle post-diffusion to emulate paint soaking into paper.
+            // Uses randomized layered strokes and multi-pass blurs to emulate
+            // paint diffusion and granulation; directional smear (vx/vy) removed.
+            // Schedules subtle immediate spread passes to approximate bleeding.
             // High-fidelity watercolor blob renderer
             // - uses an offscreen canvas to compose layered pigment, rings, speckles and blurred diffusion
             // - pressure controls opacity and mixing
             // - vx,vy provide smear direction
-            function drawWatercolorBlob(x, y, currentSpreadRadius, vx = 0, vy = 0, pressure = 1.0) {
+            function drawWatercolorBlob(x, y, currentSpreadRadius, pressure = 1.0, vx = 0, vy = 0) {
+                // use an adjusted copy of the selected color for drawing so palette
+                // hex remains untouched while the on-canvas appearance is slightly
+                // brighter/clearer (more saturated / lighter) for a translucent watercolor look
+                function adjustHexForDrawing(hex, lightBoost = 0.06, satBoost = 0.06) {
+                    // convert hex -> r,g,b (0..1)
+                    const r = parseInt(hex.slice(1,3),16) / 255;
+                    const g = parseInt(hex.slice(3,5),16) / 255;
+                    const b = parseInt(hex.slice(5,7),16) / 255;
+                    // convert to HSL
+                    const max = Math.max(r,g,b), min = Math.min(r,g,b);
+                    let h = 0, s = 0, l = (max+min)/2;
+                    if (max !== min) {
+                        const d = max - min;
+                        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                        switch(max) {
+                            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                            case g: h = (b - r) / d + 2; break;
+                            case b: h = (r - g) / d + 4; break;
+                        }
+                        h /= 6;
+                    }
+                    // apply small boosts
+                    l = Math.min(1, l + lightBoost);
+                    s = Math.min(1, s + satBoost);
+
+                    // convert HSL back to RGB
+                    function hue2rgb(p, q, t) {
+                        if (t < 0) t += 1;
+                        if (t > 1) t -= 1;
+                        if (t < 1/6) return p + (q - p) * 6 * t;
+                        if (t < 1/2) return q;
+                        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                        return p;
+                    }
+                    let rr, gg, bb;
+                    if (s === 0) { rr = gg = bb = l; }
+                    else {
+                        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                        const p = 2 * l - q;
+                        rr = hue2rgb(p, q, h + 1/3);
+                        gg = hue2rgb(p, q, h);
+                        bb = hue2rgb(p, q, h - 1/3);
+                    }
+                    // convert back to hex
+                    function toHex(v) { return Math.max(0, Math.min(255, Math.round(v * 255))).toString(16).padStart(2,'0'); }
+                    return `#${toHex(rr)}${toHex(gg)}${toHex(bb)}`;
+                }
+
+                // stronger render-only boost so strokes look clearer/more luminous
+                const drawColorHex = adjustHexForDrawing(currentDrawColor, 0.14, 0.14);
                 wcCtx.save();
-                wcCtx.globalCompositeOperation = 'multiply';
+                // use normal alpha compositing by default so overlapping colors remain translucent
+                wcCtx.globalCompositeOperation = 'source-over';
 
                 // Map pressure (0..1) into requested opacity range [0.2, 0.5]
                 const clampedPressure = Math.max(0, Math.min(1, pressure));
-                // make base paint more saturated/visible for vivid colors
-                const basePaintAlpha = 0.35 + clampedPressure * 0.45; // range ~0.35 .. 0.8
-                const watercolorColor = hexToRgba(currentDrawColor, basePaintAlpha);
+                // make base paint more saturated/visible for vivid colors (allow stronger extremes)
+                const basePaintAlpha = Math.min(0.95, 0.45 + clampedPressure * 0.5); // ~0.45 .. 0.95
+                const watercolorColor = hexToRgba(drawColorHex, basePaintAlpha);
 
                 const baseBrushRadius = currentSpreadRadius * 0.8;
-                    // number of fine strokes increases with brush size and granulation
-                    const numStrokes = Math.max(8, Math.floor(8 + baseBrushRadius * 0.12 + simConfig.granulation * 36));
-                    const blurAmount = baseBrushRadius * (0.4 + simConfig.granulation * 0.6);
+                // derive paint opacity / lifetime and per-stamp parameters
+                const initialAlpha = Math.max(0.18, Math.min(1.0, (0.8 + clampedPressure * 0.2) * (0.8 + simConfig.mixingStrength * 0.3)));
+                const lifespan = Math.max(300, Math.round(1800 / Math.max(0.18, simConfig.dryingSpeed)));
+                // number of fine strokes increases with brush size and granulation
+                const numStrokes = Math.max(8, Math.floor(8 + baseBrushRadius * 0.12 + simConfig.granulation * 36));
+                const blurAmount = baseBrushRadius * (0.4 + simConfig.granulation * 0.6);
 
                 // create an offscreen canvas sized to contain the largest spread
                 const ratio = window.devicePixelRatio || 1;
@@ -636,13 +656,18 @@
                 off.width = offsize; off.height = offsize;
                 const oc = off.getContext('2d');
                 oc.setTransform(ratio, 0, 0, ratio, 0, 0);
+                try { oc.imageSmoothingEnabled = true; } catch (err) { /* ignore */ }
 
                 // center of the offscreen blot in CSS pixels
                 const cx = off.width / (2 * ratio);
                 const cy = off.height / (2 * ratio);
 
-                // Directional flow scaling - when pointer moves quickly the paint smears in that direction
-                const flowScale = Math.min(20, Math.sqrt(vx * vx + vy * vy) * 2);
+                // Compute pointer velocity influence for directional flow
+                const velMag = Math.sqrt((vx || 0) * (vx || 0) + (vy || 0) * (vy || 0));
+                const nx = velMag > 0 ? (vx / velMag) : 0;
+                const ny = velMag > 0 ? (vy / velMag) : 0;
+                // flowScale determines how much stamps/bleeds bias along motion
+                const flowScale = Math.min(1.0, velMag / 160) * (simConfig.flowStrength || 0.6);
 
                 // Color mixing: sample underlying pixels in a small box and mix the stroke color
                 // Amount of mixing increases with pressure and with larger brush
@@ -658,7 +683,7 @@
                         const data = wcCtx.getImageData(sx, sy, sw, sh).data;
                         let rSum = 0, gSum = 0, bSum = 0, count = 0;
                         for (let i = 0; i < data.length; i += 4) {
-                            rSum += data[i];
+                    const initialAlpha = Math.max(0.18, Math.min(1.0, (0.8 + clampedPressure * 0.2) * (0.8 + simConfig.mixingStrength * 0.3))) + (Math.random() - 0.5) * 0.1;
                             gSum += data[i + 1];
                             bSum += data[i + 2];
                             count++;
@@ -670,7 +695,7 @@
 
                             // mixing weight depends on pressure and global mixingStrength
                             const mixStrength = Math.min(0.95, simConfig.mixingStrength * (0.25 + clampedPressure * 0.75));
-                            const src = hexToRgbaArray(currentDrawColor);
+                            const src = hexToRgbaArray(drawColorHex);
                             const mixedR = src[0] * (1 - mixStrength) + ar * mixStrength;
                             const mixedG = src[1] * (1 - mixStrength) + ag * mixStrength;
                             const mixedB = src[2] * (1 - mixStrength) + ab * mixStrength;
@@ -684,8 +709,12 @@
                     const t = i / numStrokes; // 0..1 across strokes
                     const radius = baseBrushRadius * (0.6 + Math.random() * 0.9) * (1 + t * 0.4);
                     // directional bias
-                    const offsetX = (Math.random() - 0.5) * blurAmount + vx * (t * flowScale * 0.6);
-                    const offsetY = (Math.random() - 0.5) * blurAmount + vy * (t * flowScale * 0.6);
+                    // non-directional jitter instead of motion-aligned smear
+                    const jitter = (Math.random() - 0.5) * blurAmount * (1 + t * 0.5);
+                    // combine random jitter with motion bias to create directional flow
+                    const motionBias = flowScale * baseBrushRadius * 0.18 * (0.6 + Math.random() * 0.8);
+                    const offsetX = jitter + (Math.random() - 0.5) * baseBrushRadius * 0.08 + nx * motionBias * (0.6 + Math.random() * 0.8);
+                    const offsetY = (Math.random() - 0.5) * blurAmount * (1 + t * 0.5) + (Math.random() - 0.5) * baseBrushRadius * 0.08 + ny * motionBias * (0.6 + Math.random() * 0.8);
 
                     // stroke alpha factors: base translucency, pressure and granulation
                     const strokeAlpha = (0.01 + Math.random() * 0.06) * (1 - t * 0.85) * (0.6 + clampedPressure * 0.6) * (0.6 + simConfig.granulation * 0.8);
@@ -718,25 +747,26 @@
                 // core: darker, concentrated pigment toward center
                 // core: darker, concentrated pigment toward center
                 oc.globalAlpha = Math.min(0.95, 0.32 + clampedPressure * 0.48 + simConfig.mixingStrength * 0.15);
-                oc.fillStyle = mixedCenterColor || hexToRgba(currentDrawColor, Math.min(0.95, basePaintAlpha + 0.15));
+                oc.fillStyle = mixedCenterColor || hexToRgba(drawColorHex, Math.min(0.95, basePaintAlpha + 0.15));
                 oc.beginPath();
                 // smaller, dense irregular core
                 const coreR = baseBrushRadius * 0.6;
                 for (let p = 0; p < 10; p++) {
                     const a = (p / 10) * Math.PI * 2;
                     const r = coreR * (0.7 + Math.random() * 0.5);
-                    const px = cx + Math.cos(a) * r + vx * 0.6;
-                    const py = cy + Math.sin(a) * r + vy * 0.6;
+                    // small random displacement for irregular core, no directional smear
+                    const px = cx + Math.cos(a) * r + (Math.random() - 0.5) * coreR * 0.12;
+                    const py = cy + Math.sin(a) * r + (Math.random() - 0.5) * coreR * 0.12;
                     if (p === 0) oc.moveTo(px, py);
                     else oc.lineTo(px, py);
                 }
                 oc.closePath();
                 oc.fill();
-
+                    // - directional smear was removed; we use randomized jitter and rotation
                 // add a ring: draw a darker thin outline then blur heavily to create pigment-edge ring
-                oc.globalAlpha = 0.42 + clampedPressure * 0.38 + simConfig.granulation * 0.25;
-                oc.strokeStyle = hexToRgba(currentDrawColor, Math.min(0.9, basePaintAlpha + 0.2));
-                oc.lineWidth = Math.max(2, coreR * 0.09);
+                oc.globalAlpha = 0.42 + clampedPressure * 0.5 + simConfig.granulation * 0.35;
+                oc.strokeStyle = hexToRgba(drawColorHex, Math.min(0.95, basePaintAlpha + 0.25));
+                oc.lineWidth = Math.max(2, coreR * 0.12);
                 oc.beginPath();
                 const ringR = coreR * (1.0 + 0.25 * Math.random());
                 for (let p = 0; p < 24; p++) {
@@ -750,8 +780,23 @@
                 oc.closePath();
                 oc.stroke();
 
+                // darken the rim a bit to simulate pigment aggregation at the edge
+                try {
+                    oc.save();
+                    oc.globalCompositeOperation = 'multiply';
+                    // reduce rim darken alpha so edges don't drive overlapping into black
+                    oc.globalAlpha = 0.12 + clampedPressure * 0.12;
+                    oc.filter = `blur(${Math.max(2, coreR * 0.8)}px)`;
+                    oc.fillStyle = 'rgba(0,0,0,0.26)';
+                    createIrregularShape(oc, cx, cy, ringR * 1.6);
+                    oc.fill();
+                    oc.filter = 'none';
+                    oc.restore();
+                } catch (err) { /* ignore */ }
+
                 // speckles (pigment granulation). Draw small scattered darker dots then blur
-                oc.globalAlpha = 0.35 * clampedPressure * (0.6 + simConfig.granulation);
+                // toning down speckle alpha to keep overall texture translucent
+                oc.globalAlpha = 0.32 * clampedPressure * (0.6 + simConfig.granulation * 0.8);
                 for (let s = 0; s < Math.floor(coreR * (1.8 + simConfig.granulation * 2.8)); s++) {
                     const sx = cx + (Math.random() - 0.5) * coreR * 2.3;
                     const sy = cy + (Math.random() - 0.5) * coreR * 2.3;
@@ -775,79 +820,324 @@
                 // dry+composite the blobs into the dry canvas when finished.
                 const drawX = x - cx;
                 const drawY = y - cy;
-                const initialAlpha = Math.max(0.18, Math.min(1.0, (0.8 + clampedPressure * 0.2) * (0.8 + simConfig.mixingStrength * 0.3)));
-                const lifespan = Math.max(300, Math.round(1800 / Math.max(0.18, simConfig.dryingSpeed)));
+                // initialAlpha & lifespan were already computed earlier for this stamp
 
-                if (!window._activeWetBlobs) window._activeWetBlobs = [];
-                if (!watercolorWetCanvas || !wetCtx) {
-                    // no wet canvas available -> fallback to immediate stamping into dry canvas
-                    wcCtx.save();
-                    wcCtx.globalCompositeOperation = 'multiply';
-                    wcCtx.globalAlpha = initialAlpha;
-                    wcCtx.filter = 'blur(1.5px)';
-                    wcCtx.drawImage(off, drawX, drawY, cx * 2, cy * 2);
-                    wcCtx.filter = 'none';
-                    wcCtx.restore();
-                } else {
-                    window._activeWetBlobs.push({
-                    canvas: off,
-                    x: drawX,
-                    y: drawY,
-                    w: cx * 2,
-                    h: cy * 2,
-                    createdAt: performance.now(),
-                    lifespan: lifespan,
-                    initialAlpha: initialAlpha,
-                        composite: 'multiply',
-                        ephemeral: !!simConfig.ephemeral,
-                    spreadExtra: simConfig.spreadFactor * 0.6
-                });
+                // We no longer queue wet blobs — wet animation removed.
+                // Immediately stamp the composed offscreen blob onto the dry canvas
+                // using multiple passes to simulate watercolor bleeding/softening.
+                try {
+                    // multi-pass wash layers (wet-on-wet if enabled) — paint softer larger underlying washes first
+                    const washes = Math.max(0, Math.floor(simConfig.washLayers || 0));
+                    if (washes > 0) {
+                        for (let wl = 0; wl < washes; wl++) {
+                            try {
+                                const t = washes <= 1 ? 0 : wl / (washes - 1);
+                                const scale = 1 + 0.28 + t * (0.9 + Math.random() * 0.8);
+                                const blurPx = 2 + t * (6 + simConfig.bleedIntensity * 8);
+                                const alphaW = Math.max(0.02, Math.min(0.4, initialAlpha * (0.08 + (1 - t) * 0.16) * (0.8 + simConfig.bleedIntensity * 0.6)));
+                                const driftX = (Math.random() - 0.5) * baseBrushRadius * 0.18 * (1 + t);
+                                const driftY = (Math.random() - 0.5) * baseBrushRadius * 0.18 * (1 + t);
 
-                }
-                // Subtle post-spread diffusion: schedule a few faded, blurred larger shapes
-                const spreadSteps = Math.max(3, Math.floor(4 + simConfig.spreadFactor * 0.9));
-                const spreadDelay = Math.max(8, Math.round(60 / Math.max(0.25, simConfig.dryingSpeed)));
-                for (let s = 1; s <= spreadSteps; s++) {
-                    // each step slightly delayed to emulate capillary spread over time
-                    (function(step) {
-                        setTimeout(() => {
-                            // create a simple faded blob clone for the spread and queue as wet blob
-                            const stepT = step / spreadSteps; // [0..1]
-                            const driftX = vx * 0.3 * stepT + (Math.random() - 0.5) * 8;
-                            const driftY = vy * 0.3 * stepT + (Math.random() - 0.5) * 8;
-                            // reuse the same offscreen canvas but push as a new queued instance
-                            if (!watercolorWetCanvas || !wetCtx) {
-                                // fallback: draw spread directly into dry canvas
+                                const targetCtx = wetCtx || wcCtx;
+                                targetCtx.save();
+                                // wet-on-wet blends should be gentle; prefer screen to avoid hard darkening
+                                targetCtx.globalCompositeOperation = simConfig.wetOnWet ? 'screen' : 'source-over';
+                                targetCtx.globalAlpha = alphaW;
+                                targetCtx.filter = `blur(${Math.max(1, blurPx)}px)`;
+                                targetCtx.translate(drawX + cx + driftX, drawY + cy + driftY);
+                                targetCtx.rotate((Math.random() - 0.5) * 0.7);
+                                targetCtx.drawImage(off, -cx * scale, -cy * scale, cx * 2 * scale, cy * 2 * scale);
+                                targetCtx.filter = 'none';
+                                targetCtx.restore();
+                            } catch (err) { /* ignore wash failures */ }
+                        }
+                    }
+
+                    // base stamp (soft blurred base) -> write to wet layer first so it can flow
+                    if (wetCtx) {
+                        try {
+                            wetCtx.save();
+                            wetCtx.globalCompositeOperation = 'source-over';
+                            wetCtx.globalAlpha = Math.min(1.0, initialAlpha * 1.05);
+                            wetCtx.filter = 'blur(1.5px)';
+                            wetCtx.drawImage(off, drawX, drawY, cx * 2, cy * 2);
+                            wetCtx.filter = 'none';
+                            wetCtx.restore();
+
+                            // directional trail for faster motion
+                            if (flowScale > 0.06) {
+                                try {
+                                    const stretch = 1 + flowScale * (0.6 + Math.random() * 1.2);
+                                    const trailAlpha = Math.min(0.6, initialAlpha * (0.28 + flowScale * 0.9));
+                                    const sx = drawX + nx * baseBrushRadius * (0.6 + Math.random() * 1.0);
+                                    const sy = drawY + ny * baseBrushRadius * (0.6 + Math.random() * 1.0);
+                                    wetCtx.save();
+                                    wetCtx.globalCompositeOperation = 'source-over';
+                                    wetCtx.globalAlpha = trailAlpha;
+                                    wetCtx.filter = `blur(${Math.max(1.6, baseBrushRadius * 0.12 * stretch)}px)`;
+                                    const ang = Math.atan2(ny, nx) + (Math.random() - 0.5) * 0.6;
+                                    wetCtx.translate(sx + cx, sy + cy);
+                                    wetCtx.rotate(ang);
+                                    wetCtx.drawImage(off, -cx * stretch, -cy * (stretch * 0.6), cx * 2 * stretch, cy * 2 * (stretch * 0.6));
+                                    wetCtx.filter = 'none';
+                                    wetCtx.restore();
+                                } catch (err) { /* ignore flow paint */ }
+                            }
+
+                            // small randomized brush-shaped particles around the stamp
+                            try {
+                                const particleCount = Math.max(2, Math.min(20, Math.floor(baseBrushRadius * 0.04) + Math.floor(Math.random() * 6)));
+                                for (let pI = 0; pI < particleCount; pI++) {
+                                    const psize = Math.max(6, Math.round(baseBrushRadius * (0.08 + Math.random() * 0.18)));
+                                    const pc = document.createElement('canvas'); pc.width = psize * 2; pc.height = psize * 2;
+                                    const pct = pc.getContext('2d');
+                                    try { pct.imageSmoothingEnabled = true; } catch (err) {}
+                                    const px = pc.width / 2, py = pc.height / 2;
+                                    pct.save();
+                                    pct.translate(px, py);
+                                    const ang = (Math.random() - 0.5) * Math.PI;
+                                    pct.rotate(ang);
+                                    // create an elongated irregular brush shape
+                                    pct.beginPath();
+                                    const points = 5 + Math.floor(Math.random() * 4);
+                                    for (let pp = 0; pp < points; pp++) {
+                                        const a = (pp / points) * Math.PI * 2;
+                                        const r = psize * (0.5 + Math.random() * 0.9);
+                                        const rx = Math.cos(a) * r * (0.6 + Math.random() * 0.9);
+                                        const ry = Math.sin(a) * r * (0.4 + Math.random() * 0.6);
+                                        if (pp === 0) pct.moveTo(rx, ry); else pct.lineTo(rx, ry);
+                                    }
+                                    pct.closePath();
+                                    pct.fillStyle = hexToRgba(drawColorHex, 0.65 * (0.4 + Math.random() * 0.8));
+                                    pct.fill();
+                                    pct.restore();
+
+                                    // random placement around the main blob with soft alpha
+                                    const offx = (Math.random() - 0.5) * baseBrushRadius * (0.2 + Math.random() * 1.2);
+                                    const offy = (Math.random() - 0.5) * baseBrushRadius * (0.2 + Math.random() * 1.2);
+                                    wetCtx.save();
+                                    wetCtx.globalCompositeOperation = 'screen';
+                                    wetCtx.globalAlpha = 0.06 + Math.random() * 0.12;
+                                    wetCtx.filter = `blur(${Math.max(0.5, psize * 0.15)}px)`;
+                                    wetCtx.drawImage(pc, drawX + cx + offx - pc.width/2, drawY + cy + offy - pc.height/2);
+                                    wetCtx.filter = 'none';
+                                    wetCtx.restore();
+                                }
+                            } catch (err) { /* ignore particle generation errors */ }
+                        } catch (err) { /* ignore */ }
+                    } else {
+                        wcCtx.save();
+                        wcCtx.globalCompositeOperation = 'source-over';
+                        wcCtx.globalAlpha = initialAlpha;
+                        wcCtx.filter = 'blur(1.5px)';
+                        wcCtx.drawImage(off, drawX, drawY, cx * 2, cy * 2);
+                        wcCtx.filter = 'none';
+                        wcCtx.restore();
+                    }
+
+                    // subtle pigment separation (chromatography effect)
+                    if (simConfig.pigmentSeparation > 0) {
+                        try {
+                            const sep = Math.max(0.5, Math.round(simConfig.pigmentSeparation * baseBrushRadius));
+                            const rgba = hexToRgbaArray(drawColorHex);
+                            const r255 = Math.floor(rgba[0] * 255);
+                            const g255 = Math.floor(rgba[1] * 255);
+                            const b255 = Math.floor(rgba[2] * 255);
+
+                            function makeTintedCanvas(r, g, b) {
+                                const tc = document.createElement('canvas'); tc.width = off.width; tc.height = off.height;
+                                const tctx = tc.getContext('2d');
+                                tctx.drawImage(off, 0, 0);
+                                tctx.globalCompositeOperation = 'source-in';
+                                tctx.fillStyle = `rgba(${r},${g},${b},1)`;
+                                tctx.fillRect(0, 0, tc.width, tc.height);
+                                tctx.globalCompositeOperation = 'source-over';
+                                return tc;
+                            }
+
+                            const rC = makeTintedCanvas(r255, 0, 0);
+                            const gC = makeTintedCanvas(0, g255, 0);
+                            const bC = makeTintedCanvas(0, 0, b255);
+
+                            if (wetCtx) {
+                                wetCtx.save(); wetCtx.globalCompositeOperation = 'screen'; wetCtx.globalAlpha = Math.min(0.62, initialAlpha * 0.6);
+                                wetCtx.drawImage(rC, drawX - sep, drawY, cx * 2, cy * 2);
+                                wetCtx.restore();
+                            } else {
+                                wcCtx.save(); wcCtx.globalCompositeOperation = 'screen'; wcCtx.globalAlpha = Math.min(0.62, initialAlpha * 0.6);
+                                wcCtx.drawImage(rC, drawX - sep, drawY, cx * 2, cy * 2);
+                                wcCtx.restore();
+                            }
+
+                            if (wetCtx) {
+                                wetCtx.save(); wetCtx.globalCompositeOperation = 'screen'; wetCtx.globalAlpha = Math.min(0.52, initialAlpha * 0.46);
+                                wetCtx.drawImage(gC, drawX + Math.round(sep * 0.6), drawY + Math.round(sep * 0.35), cx * 2, cy * 2);
+                                wetCtx.restore();
+                            } else {
+                                wcCtx.save(); wcCtx.globalCompositeOperation = 'screen'; wcCtx.globalAlpha = Math.min(0.52, initialAlpha * 0.46);
+                                wcCtx.drawImage(gC, drawX + Math.round(sep * 0.6), drawY + Math.round(sep * 0.35), cx * 2, cy * 2);
+                                wcCtx.restore();
+                            }
+
+                            if (wetCtx) {
+                                wetCtx.save(); wetCtx.globalCompositeOperation = 'screen'; wetCtx.globalAlpha = Math.min(0.42, initialAlpha * 0.36);
+                                wetCtx.drawImage(bC, drawX + sep, drawY - Math.round(sep * 0.4), cx * 2, cy * 2);
+                                wetCtx.restore();
+                            } else {
+                                wcCtx.save(); wcCtx.globalCompositeOperation = 'screen'; wcCtx.globalAlpha = Math.min(0.42, initialAlpha * 0.36);
+                                wcCtx.drawImage(bC, drawX + sep, drawY - Math.round(sep * 0.4), cx * 2, cy * 2);
+                                wcCtx.restore();
+                            }
+                        } catch (err) { /* ignore */ }
+                    }
+
+                    // Immediate spread passes (faked diffusion) — layered, blurred, faint
+                    const spreadSteps = Math.max(3, Math.floor(4 + simConfig.spreadFactor * 0.9));
+                    for (let s = 1; s <= spreadSteps; s++) {
+                        const stepT = s / spreadSteps; // [0..1]
+                        // non-directional random drift for spread (remove straight-line smear)
+                        // bias spread slightly along motion to create flow
+                        const driftX = (Math.random() - 0.5) * 8 * stepT + (Math.random() - 0.5) * baseBrushRadius * 0.02 + nx * baseBrushRadius * flowScale * (0.22 + stepT * 0.46);
+                        const driftY = (Math.random() - 0.5) * 8 * stepT + (Math.random() - 0.5) * baseBrushRadius * 0.02 + ny * baseBrushRadius * flowScale * (0.22 + stepT * 0.46);
+                        const sw = cx * 2 * (1 + stepT * 0.8);
+                        const sh = cy * 2 * (1 + stepT * 0.8);
+
+                        // spread pass: draw with slight rotation/jitter to avoid linear repeats
+                        try {
+                            const angle = (Math.random() - 0.5) * 1.2; // randomized rotation
+                            const jx = (Math.random() - 0.5) * baseBrushRadius * 0.06;
+                            const jy = (Math.random() - 0.5) * baseBrushRadius * 0.06;
+                            if (wetCtx) {
+                                wetCtx.save();
+                                wetCtx.translate(drawX + cx + driftX + jx, drawY + cy + driftY + jy);
+                                wetCtx.rotate(angle);
+                                wetCtx.globalCompositeOperation = 'source-over';
+                                wetCtx.filter = `blur(${2 + stepT * 6}px)`;
+                                // slightly stronger fades for more visible bleed layers
+                                wetCtx.globalAlpha = Math.max(0.01, 0.08 * (1 - stepT));
+                                wetCtx.drawImage(off, -sw / 2, -sh / 2, sw, sh);
+                                wetCtx.filter = 'none';
+                                wetCtx.restore();
+                            } else {
                                 wcCtx.save();
-                                wcCtx.globalCompositeOperation = 'multiply';
+                                wcCtx.translate(drawX + cx + driftX + jx, drawY + cy + driftY + jy);
+                                wcCtx.rotate(angle);
+                                wcCtx.globalCompositeOperation = 'source-over';
                                 wcCtx.filter = `blur(${2 + stepT * 6}px)`;
-                                wcCtx.globalAlpha = 0.04 * (1 - stepT);
-                                wcCtx.fillStyle = hexToRgba(currentDrawColor, basePaintAlpha * 0.6);
-                                const sRadius = baseBrushRadius * (1 + stepT * 1.6) + Math.random() * 6;
-                                const driftX2 = vx * 0.3 * stepT + (Math.random() - 0.5) * 8;
-                                const driftY2 = vy * 0.3 * stepT + (Math.random() - 0.5) * 8;
-                                createIrregularShape(wcCtx, x + driftX2, y + driftY2, sRadius);
+                                // slightly stronger fades for more visible bleed layers
+                                wcCtx.globalAlpha = Math.max(0.01, 0.08 * (1 - stepT));
+                                wcCtx.drawImage(off, -sw / 2, -sh / 2, sw, sh);
+                                wcCtx.filter = 'none';
+                                wcCtx.restore();
+                            }
+                        } catch (err) { /* ignore */ }
+                    }
+
+                    // After spreading into the wet layer, deposit some pigment to dry canvas
+                    if (wetCtx) {
+                        try {
+                            const depositAlpha = Math.max(0.03, initialAlpha * (0.42 + simConfig.bleedIntensity * 0.36));
+                            wcCtx.save(); wcCtx.globalCompositeOperation = 'source-over'; wcCtx.globalAlpha = depositAlpha;
+                            wcCtx.drawImage(watercolorWetCanvas, drawX, drawY, cx * 2, cy * 2);
+                            // subtle white sheen deposit to emphasize wet, bleeding highlights
+                            try {
+                                wcCtx.save();
+                                wcCtx.globalCompositeOperation = 'screen';
+                                wcCtx.globalAlpha = Math.min(0.08, depositAlpha * 0.18);
+                                const g2 = wcCtx.createRadialGradient(drawX + cx, drawY + cy, Math.max(2, baseBrushRadius * 0.12), drawX + cx, drawY + cy, baseBrushRadius * 0.9);
+                                g2.addColorStop(0, 'rgba(255,255,255,0.9)');
+                                g2.addColorStop(1, 'rgba(255,255,255,0)');
+                                wcCtx.fillStyle = g2;
+                                wcCtx.beginPath(); wcCtx.arc(drawX + cx, drawY + cy, baseBrushRadius * 1.0, 0, Math.PI * 2); wcCtx.fill();
+                                wcCtx.restore();
+                            } catch (err) { /* ignore highlight deposit issues */ }
+                            wcCtx.restore();
+
+                            // partially dry the wet region so it fades and won't spread forever
+                            wetCtx.save();
+                            wetCtx.globalCompositeOperation = 'destination-out';
+                            wetCtx.globalAlpha = Math.min(0.32, 0.06 + (1.0 / Math.max(0.6, simConfig.dryingSpeed)) * 0.12);
+                            wetCtx.fillStyle = 'rgba(0,0,0,1)';
+                            wetCtx.fillRect(drawX, drawY, cx * 2, cy * 2);
+                            wetCtx.restore();
+                        } catch (err) { /* ignore deposit issues */ }
+                    }
+
+                    // subtle irregular fill to add textured edge / capillary effect
+                    wcCtx.save();
+                    wcCtx.globalCompositeOperation = 'source-over';
+                    wcCtx.globalAlpha = 0.03 + Math.min(0.18, simConfig.granulation * 0.1);
+                    wcCtx.fillStyle = hexToRgba(drawColorHex, Math.min(0.9, basePaintAlpha * 0.6));
+                    const sRadius = baseBrushRadius * (1 + 0.4) + Math.random() * 6;
+                    createIrregularShape(wcCtx, x + (Math.random() - 0.5) * 6, y + (Math.random() - 0.5) * 6, sRadius);
+                    wcCtx.fill();
+                    wcCtx.restore();
+
+                    // backrun / edge bleed simulation: small radial runs and tails
+                    if (simConfig.backrunStrength > 0.001) {
+                        try {
+                            const runs = Math.max(1, Math.floor(simConfig.backrunStrength * 18));
+                            for (let r = 0; r < runs; r++) {
+                                const angle = Math.random() * Math.PI * 2;
+                                const len = baseBrushRadius * (0.6 + Math.random() * 1.8) * (0.4 + simConfig.backrunStrength);
+                                const jitter = (Math.random() - 0.5) * baseBrushRadius * 0.06;
+                                const px = x + Math.cos(angle) * (coreR * (0.9 + Math.random() * 0.6));
+                                const py = y + Math.sin(angle) * (coreR * (0.9 + Math.random() * 0.6));
+                                wcCtx.save();
+                                wcCtx.translate(px + jitter, py + jitter);
+                                wcCtx.rotate(angle + (Math.random() - 0.5) * 0.6);
+                                wcCtx.globalCompositeOperation = 'source-over';
+                                wcCtx.globalAlpha = Math.min(0.42, initialAlpha * (0.25 + Math.random() * 0.9) * simConfig.backrunStrength);
+                                wcCtx.filter = `blur(${2 + Math.random() * 8}px)`;
+                                // elongated irregular shape representing a capillary run
+                                const runRadius = Math.max(3, len);
+                                wcCtx.fillStyle = hexToRgba(drawColorHex, Math.min(0.9, basePaintAlpha * (0.8 + Math.random() * 0.25)));
+                                wcCtx.beginPath();
+                                const segs = 6 + Math.floor(Math.random() * 5);
+                                for (let p = 0; p < segs; p++) {
+                                    const t = p / (segs - 1);
+                                    // taper at the tail (wider near start, narrower at end)
+                                    const rr = runRadius * (1.0 - t * (0.6 + Math.random() * 0.45));
+                                    const ax = t * len * (0.3 + Math.random() * 1.3) - len * 0.15;
+                                    const ay = (Math.random() - 0.5) * rr * 0.6;
+                                    if (p === 0) wcCtx.moveTo(ax, ay);
+                                    else wcCtx.lineTo(ax, ay);
+                                }
+                                wcCtx.closePath();
                                 wcCtx.fill();
                                 wcCtx.filter = 'none';
                                 wcCtx.restore();
-                            } else {
-                                window._activeWetBlobs.push({
-                                canvas: off,
-                                x: drawX + driftX,
-                                y: drawY + driftY,
-                                w: cx * 2 * (1 + stepT * 0.8),
-                                h: cy * 2 * (1 + stepT * 0.8),
-                                createdAt: performance.now(),
-                                lifespan: Math.max(250, Math.round(lifespan * (0.4 + stepT * 0.9))),
-                                initialAlpha: Math.max(0.02, 0.04 * (1 - stepT)),
-                                composite: 'multiply',
-                                ephemeral: !!simConfig.ephemeral,
-                                spreadExtra: stepT * 0.4
-                                });
                             }
-                        }, step * spreadDelay);
-                    })(s);
-                }
+                        } catch (err) { /* ignore backrun failures */ }
+                    }
+
+                    // rim darkening to emphasize edges (subtle but visible)
+                    const rimCtx = wetCtx || wcCtx;
+                    rimCtx.save();
+                    rimCtx.globalCompositeOperation = 'source-over';
+                    rimCtx.globalAlpha = Math.min(0.28, 0.08 + basePaintAlpha * 0.28);
+                    rimCtx.filter = `blur(${Math.max(1.2, baseBrushRadius * 0.08)}px)`;
+                    rimCtx.strokeStyle = 'rgba(0,0,0,0.5)';
+                    rimCtx.lineWidth = Math.max(1, baseBrushRadius * 0.06);
+                    createIrregularShape(rimCtx, x, y, baseBrushRadius * 1.1);
+                    rimCtx.stroke();
+                    rimCtx.filter = 'none';
+                    rimCtx.restore();
+
+                    // soft highlight in the center to simulate wet sheen / light catch
+                    const highlightCtx = wetCtx || wcCtx;
+                    highlightCtx.save();
+                    highlightCtx.globalCompositeOperation = 'screen';
+                    // make the white sheen more visible for wetter-looking watercolor
+                    highlightCtx.globalAlpha = 0.16 + Math.min(0.28, clampedPressure * 0.28);
+                    const grad = highlightCtx.createRadialGradient(x, y, Math.max(2, baseBrushRadius * 0.18), x, y, baseBrushRadius * 1.1);
+                    grad.addColorStop(0, 'rgba(255,255,255,0.85)');
+                    grad.addColorStop(1, 'rgba(255,255,255,0)');
+                    highlightCtx.fillStyle = grad;
+                    highlightCtx.beginPath(); highlightCtx.arc(x, y, baseBrushRadius * 1.2, 0, Math.PI * 2); highlightCtx.fill();
+                    highlightCtx.restore();
+                } catch (err) { /* drawing fallback ignore */ }
+                // (no asynchronous spread; everything stamped synchronously above)
 
                 wcCtx.restore();
             }
@@ -866,19 +1156,15 @@
                 // capture pointer so we continue receiving events if the pointer goes outside
                 try { watercolorCanvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
 
-                drawWatercolorBlob(lastPointerX, lastPointerY, baseRadius, 0, 0, pressureVal);
+                // update visible pointer immediately so it follows while drawing
+                try { colorPointer.style.left = `${e.clientX}px`; colorPointer.style.top = `${e.clientY}px`; } catch (err) { /* ignore */ }
+                // don't stamp immediately here — start stamping on first move so strokes
+                // feel continuous. If the pointer doesn't move before pointerup, we'll
+                // emit a single dot on pointerup.
+                hasMovedSinceDown = false;
                 // call GPU input if GPU has been initialized
                 try { window.performGpuInput(e); } catch (err) { /* ignore */ }
-                // spread animation loop
-                requestAnimationFrame(function spreadStep(ts) {
-                    if (!isDrawingLocal) return;
-                    const elapsed = ts - spreadStartTime;
-                    const progress = Math.min(elapsed / ANIMATION_DURATION, 1);
-                    const maxSpreadRadius = baseRadius * MAX_SPREAD_FACTOR;
-                    const currentSpreadRadius = baseRadius + (maxSpreadRadius - baseRadius) * progress;
-                    drawWatercolorBlob(lastPointerX, lastPointerY, currentSpreadRadius);
-                    if (progress < 1) requestAnimationFrame(spreadStep);
-                });
+                // no wet-layer spread animation — drawing is stamped immediately
             });
 
             watercolorCanvas.addEventListener('pointermove', (e) => {
@@ -888,23 +1174,58 @@
                 const rect = watercolorCanvas.getBoundingClientRect();
                 const x = e.clientX - rect.left;
                 const y = e.clientY - rect.top;
-                const vx = x - lastPointerX;
-                const vy = y - lastPointerY;
-                lastPointerX = x; lastPointerY = y;
+                // compute deltas using previous pointer coords (do not overwrite until we finish stamping)
+                const prevX = lastPointerX;
+                const prevY = lastPointerY;
+                const dx = x - prevX;
+                const dy = y - prevY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                // mark we moved since the last down so pointerup won't create a duplicate dot
+                hasMovedSinceDown = true;
+                // update the visible pointer while drawing/capturing
+                try { colorPointer.style.left = `${e.clientX}px`; colorPointer.style.top = `${e.clientY}px`; } catch (err) { /* ignore */ }
                 if (!isDrawingLocal) return;
-                const elapsed = performance.now() - spreadStartTime;
-                const progress = Math.min(elapsed / ANIMATION_DURATION, 1);
-                const maxSpreadRadius = baseRadius * MAX_SPREAD_FACTOR;
-                const currentSpreadRadius = baseRadius + (maxSpreadRadius - baseRadius) * progress;
-                // take pointer pressure into account
-                const pressureVal = (typeof e.pressure === 'number' && e.pressure > 0) ? e.pressure : 1.0;
-                drawWatercolorBlob(x, y, currentSpreadRadius, vx, vy, pressureVal);
+                // derive a quick dynamic radius from move speed so strokes feel responsive
+                // perform interpolation along the movement so stamps are closer together
+                // and the stroke appears smooth (avoid visible stepping)
+                const spacing = Math.max(4, baseRadius * 0.28);
+                const steps = Math.max(1, Math.ceil(dist / spacing));
+                const stepVx = dx / steps;
+                const stepVy = dy / steps;
+                let stampX = prevX;
+                let stampY = prevY;
+                for (let si = 1; si <= steps; si++) {
+                    stampX = prevX + (dx * (si / steps));
+                    stampY = prevY + (dy * (si / steps));
+                    // small per-step velocity to feed into the blur/flow
+                    const svx = stepVx;
+                    const svy = stepVy;
+                    const speed = Math.sqrt(svx * svx + svy * svy);
+                const speedFactor = Math.min(1, speed / 120);
+                    const currentRadius = baseRadius + Math.min(1, speed / 120) * baseRadius * 0.6;
+                    const pressureVal = (typeof e.pressure === 'number' && e.pressure > 0) ? e.pressure : 1.0;
+                    drawWatercolorBlob(stampX, stampY, currentRadius, pressureVal, svx, svy);
+                }
+                // update last pointer to current point
+                lastPointerX = x; lastPointerY = y;
                 try { window.performGpuInput(e); } catch (err) { /* ignore */ }
             });
 
             function pointerUpHandler(e) {
                 try { watercolorCanvas.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+                // If the user pressed and released without moving, emit a single
+                // small stamp so clicks still create dots. We avoid stamping twice
+                // by using the hasMovedSinceDown flag.
+                if (!hasMovedSinceDown) {
+                    const rect = watercolorCanvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    const pressureVal = (typeof e.pressure === 'number' && e.pressure > 0) ? e.pressure : 1.0;
+                    // smaller dot for click-only
+                    drawWatercolorBlob(x, y, Math.max(6, Math.round(baseRadius * 0.45)), pressureVal, 0, 0);
+                }
                 isDrawingLocal = false;
+                hasMovedSinceDown = false;
             }
 
             watercolorCanvas.addEventListener('pointerup', pointerUpHandler);
@@ -913,10 +1234,10 @@
             clearButton.addEventListener('click', () => {
                 // clear overlay immediately (both dry and wet layers)
                 wcCtx.clearRect(0, 0, watercolorCanvas.width, watercolorCanvas.height);
-                wcCtx.fillStyle = 'black'; wcCtx.fillRect(0, 0, watercolorCanvas.width, watercolorCanvas.height);
+                wcCtx.fillStyle = 'white'; wcCtx.fillRect(0, 0, watercolorCanvas.width, watercolorCanvas.height);
                 if (wetCtx && watercolorWetCanvas) {
+                    // clear wet canvas if present (we don't use wet animation anymore)
                     wetCtx.clearRect(0, 0, watercolorWetCanvas.width, watercolorWetCanvas.height);
-                    if (window._activeWetBlobs) window._activeWetBlobs.length = 0;
                 }
                 // if GPU textures available, reinitialize them via globals
                 if (deviceGlobal && inputSimTextureGlobal && outputSimTextureGlobal && initialDataGlobal) {
@@ -925,12 +1246,58 @@
                 }
             });
 
+            // share button: save current drawing and open share view
+            const shareButton = document.createElement('button');
+            shareButton.id = 'shareButton';
+            shareButton.textContent = '만들기';
+            shareButton.style.marginTop = '8px';
+            shareButton.style.padding = '8px 10px';
+            shareButton.style.display = 'inline-block';
+            // inject share button below controls (next to home)
+            const controlsEl = document.getElementById('controls');
+            if (controlsEl) {
+                const div = document.createElement('div');
+                div.style.marginTop = '8px';
+                div.appendChild(shareButton);
+                controlsEl.appendChild(div);
+            }
+
             // 홈 버튼: index.html로 이동
             const homeButton = document.getElementById('homeButton');
             if (homeButton) {
                 homeButton.addEventListener('click', () => {
                     // navigate to main index page
                     window.location.href = 'index.html';
+                });
+            }
+
+            // share button handler: composite dry + wet into dataURL and open share.html
+            if (shareButton) {
+                shareButton.addEventListener('click', () => {
+                    try {
+                        // composite into offscreen canvas at actual pixel size
+                        const off = document.createElement('canvas');
+                        off.width = watercolorCanvas.width || watercolorCanvas.clientWidth;
+                        off.height = watercolorCanvas.height || watercolorCanvas.clientHeight;
+                        const offCtx = off.getContext('2d');
+                        // white background
+                        offCtx.fillStyle = 'white';
+                        offCtx.fillRect(0, 0, off.width, off.height);
+                        // draw the dry canvas
+                        offCtx.drawImage(watercolorCanvas, 0, 0);
+                        // draw wet layer on top if present
+                        if (watercolorWetCanvas && watercolorWetCanvas.width > 0) {
+                            offCtx.drawImage(watercolorWetCanvas, 0, 0);
+                        }
+                        const dataUrl = off.toDataURL('image/png');
+                        // store into sessionStorage for share.html to read
+                        sessionStorage.setItem('sharedDrawing', dataUrl);
+                        // open share view in a new tab/window
+                        window.open('share.html', '_blank');
+                    } catch (err) {
+                        console.error('Share failed', err);
+                        alert('공유 중 오류가 발생했습니다. 콘솔을 확인해 주세요.');
+                    }
                 });
             }
 

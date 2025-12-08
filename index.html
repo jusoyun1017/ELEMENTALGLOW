@@ -184,8 +184,8 @@
           }
         } catch (e) { /* ignore if DOM not ready */ }
 
-        // show START button after the slower logo fade finished
-        setTimeout(() => { if (btn) btn.classList.add('show'); }, 4000);
+        // show START button earlier (was 4000ms)
+        setTimeout(() => { if (btn) btn.classList.add('show'); }, 1200);
       }
     });
 
@@ -200,8 +200,8 @@
           createRipple(e.clientX + Math.random() * 100 - 50, e.clientY + Math.random() * 100 - 50);
         }
         logo.classList.add('visible');
-        // show button after logo fade-in completes
-        setTimeout(() => { if (btn) btn.classList.add('show'); }, 4000);
+        // show button earlier (was 4000ms)
+        setTimeout(() => { if (btn) btn.classList.add('show'); }, 1200);
         return;
       }
     });

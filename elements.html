@@ -112,6 +112,11 @@
       font-size: 18px;
       padding: 8px;
       box-sizing: border-box;
+      /* place content from top to bottom so the title sits at the top */
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: stretch;
     }
 
     /* 회전(빙글) 애니메이션: 정방향(앞->뒤) */
@@ -131,59 +136,7 @@
     /* persistent flipped state: when a card has the 'flipped' marker keep it rotated */
     .card-inner.flipped { transform: rotateY(180deg); }
 
-    /* pager (top-center 5-dot indicator) */
-    .pager {
-      position: absolute;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      justify-content: center;
-      z-index: 60;
-      user-select: none;
-    }
-
-    .pager-dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: #ddd;
-      transition: background 0.3s, transform 0.3s, width 0.3s, height 0.3s;
-      cursor: pointer;
-    }
-
-    .pager-dot:nth-child(1) {
-      width: 6px;
-      height: 6px;
-    }
-
-    .pager-dot:nth-child(2) {
-      width: 10px;
-      height: 10px;
-    }
-
-    .pager-dot:nth-child(3) {
-      width: 14px;
-      height: 14px;
-      background: #333;
-    }
-
-    .pager-dot:nth-child(4) {
-      width: 10px;
-      height: 10px;
-    }
-
-    .pager-dot:nth-child(5) {
-      width: 6px;
-      height: 6px;
-    }
-
-    .pager-dot.active {
-      background: #333;
-      transform: scale(1);
-    }
+    /* pager removed per design — top-center dot indicator disabled */
     .card.center {
       z-index: 30;
       opacity: 1;
@@ -244,8 +197,10 @@
 
     .next-page-btn {
       position: absolute;
-      bottom: 40px;
-      right: 40px;
+      /* shifted slightly higher */
+      bottom: 48px;
+      left: 50%;
+      transform: translateX(-50%);
       padding: 12px 24px;
       background: #000;
       color: #fff;
@@ -254,24 +209,83 @@
       font-size: 16px;
       font-weight: 600;
       cursor: pointer;
-      transition: background 0.3s, transform 0.2s;
+      /* only transition colors (no movement animation) */
+      transition: background-color 0.18s ease, color 0.18s ease;
       z-index: 50;
     }
 
+    /* hover: change to achromatic (neutral gray background + dark text) */
     .next-page-btn:hover {
-      background: #333;
-      transform: translateY(-2px);
+      background-color: #efefef; /* very light gray */
+      color: #222; /* dark neutral text */
     }
 
     .next-page-btn:active {
-      transform: translateY(0);
+      /* slightly darker gray when pressed */
+      background-color: #e0e0e0;
+      color: #111;
+    }
+
+    /* top explanatory text about flame reaction */
+    .top-intro {
+      position: absolute;
+      /* push the intro down by 50px */
+      top: 68px;
+      left: 50%;
+      transform: translateX(-50%);
+      max-width: 980px;
+      text-align: center;
+      z-index: 70;
+      color: #222;
+      font-family: 'Noto Sans KR', system-ui, sans-serif;
+      pointer-events: none; /* informational only */
+    }
+
+    /* wrapper that looks like a neat floating info card */
+    .top-intro .intro-box {
+      display: inline-block;
+      background: rgba(255,255,255,0.92);
+      border: 1px solid rgba(0,0,0,0.06);
+      padding: 14px 20px;
+      border-radius: 14px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.07);
+      backdrop-filter: blur(4px);
+      text-align: left;
+      max-width: 880px;
+    }
+
+    .top-intro h2 { margin: 0 0 6px 0; font-size: 20px; font-weight: 700; }
+    .top-intro p { margin: 0; font-size: 14px; color: #444; line-height: 1.45; max-width: 880px; }
+
+    /* small label shown at the top of the card back faces */
+    .card-back-title {
+      width: 100%;
+      padding: 8px 10px;
+      box-sizing: border-box;
+      font-size: 13px;
+      font-weight: 700;
+      text-align: center;
+      color: rgba(255,255,255,0.95);
+      opacity: 0.95;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
     }
   </style>
 </head>
 <body>
   <div class="dots" id="dots"></div>
-  <div id="pager" class="pager" aria-hidden="false"></div>
-  <button class="next-page-btn" id="nextPageBtn">다음 페이지</button>
+  <!-- introductory explanation text -->
+  <div class="top-intro" aria-hidden="false">
+    <div class="intro-box">
+      <h2>불꽃 반응이란?</h2>
+      <p>
+        물질을 불꽃에 닿게 했을 때, 원소 안의 전자가 높은 에너지 상태로 올라갔다가 다시 내려오며 고유한 빛을 방출하는 현상이다.<br>
+        이때 나타나는 불꽃의 색은 각 원소가 가진 고유한 파장에 따라 달라진다.<br>
+        따라서 불꽃의 색을 통해 어떤 원소가 포함되어 있는지 구별할 수 있다.
+      </p>
+    </div>
+  </div>
+  <!-- pager removed per design -->
+  <button class="next-page-btn" id="nextPageBtn">시뮬레이션 해보기</button>
 
   <div class="carousel-wrap">
     <div class="container" id="carousel"></div>
@@ -290,6 +304,14 @@
       '#28AF41', '#00DE6F', '#009D6B', '#649C99', '#00C9D0', '#1389B4',
       '#0A77BA', '#3D6798', '#B39BBE', '#8C5368', '#7B2626'
     ];
+    // per-card back labels -- edit these to change each card's back header text
+    const BACK_TEXTS = [
+          'Li', 'Sr', 'Fe', 'Sc',
+      'Na', 'Mn', 'Mo', 'B',
+      'Cu', 'Nb', 'Cd', 'Rb',
+      'K', 'Se', 'S', 'As',
+      'Zn', 'P'
+    ];
     const container = document.getElementById('carousel');
     const dotsContainer = document.getElementById('dots');
 
@@ -297,12 +319,13 @@
     for (let i = 0; i < TOTAL; i++) {
       const c = document.createElement('div');
       c.className = 'card';
+      const backText = BACK_TEXTS[i] || '텍스트가 들어갈곳';
       c.innerHTML = `
         <div class="card-inner">
           <div class="card-front">
             <img class="card-img" src="./card${i + 1}.png" alt="Card ${i + 1}">
           </div>
-          <div class="card-back"></div>
+          <div class="card-back"><div class="card-back-title">${backText}</div></div>
         </div>
       `;
       // apply back color via CSS variable so .card-back uses it
@@ -444,56 +467,10 @@
       const rounded = Math.round(newTx * 2) / 2;
       container.style.transform = `translate3d(${rounded}px,0,0)`;
 
-      // update pager display
-      updatePager();
+      // pager removed — no top-center indicator
     }
 
-    function initPager() {
-      const p = document.getElementById('pager');
-      if (!p) return;
-      p.innerHTML = '';
-      for (let i = 0; i < 5; i++) {
-        const dot = document.createElement('div');
-        dot.className = 'pager-dot';
-        // center dot (index 2) is always active visually
-        if (i === 2) dot.classList.add('active');
-        dot.addEventListener('click', () => {
-          // clicking dot navigates (dot 0 = card 0, dot 1 = card 1, ..., dot 4 = card 17)
-          const targetIndex = i === 4 ? TOTAL - 1 : i;
-          index = targetIndex;
-          updateCards();
-        });
-        p.appendChild(dot);
-      }
-      // ensure center dot is black by default
-      const dots = p.querySelectorAll('.pager-dot');
-      if (dots && dots[2]) dots[2].style.background = '#000';
-    }
 
-    function updatePager() {
-      // Update the top-center dot color to reflect the current center card's back color
-      const p = document.getElementById('pager');
-      if (!p) return;
-      const dots = Array.from(p.querySelectorAll('.pager-dot'));
-      if (dots.length < 3) return;
-      const centerDot = dots[2];
-
-      // default when not flipped: black
-      let color = '#000';
-
-      // find the active center card (prefer original non-clone)
-      let activeCard = document.querySelector(`.card.center:not([data-clone="true"])`);
-      if (!activeCard) activeCard = document.querySelector('.card.center');
-      if (activeCard) {
-        const inner = activeCard.querySelector('.card-inner');
-        if (inner && inner.classList.contains('flipped')) {
-          const realIndex = parseInt(activeCard.dataset.realIndex || '0', 10);
-          color = BACK_COLORS[realIndex % BACK_COLORS.length] || '#000';
-        }
-      }
-
-      centerDot.style.background = color;
-    }
 
     // Toggle flip with animated spin: plays forward/back animations and sets 'flipped' state
     function toggleFlip(inner) {
@@ -504,12 +481,11 @@
         inner._animating = true;
         inner.classList.remove('spinning');
         inner.classList.add('spinning-back');
-          const onEndBack = function () {
+            const onEndBack = function () {
             inner.classList.remove('spinning-back','flipped');
             inner._animating = false;
             inner.removeEventListener('animationend', onEndBack);
-            // ensure pager updates when flipping back
-            updatePager();
+            // pager removed — no update needed
         };
         inner.addEventListener('animationend', onEndBack);
         return;
@@ -517,13 +493,12 @@
         inner._animating = true;
         inner.classList.remove('spinning-back');
         inner.classList.add('spinning');
-        const onEnd = function () {
+            const onEnd = function () {
           inner.classList.remove('spinning');
           inner.classList.add('flipped');
           inner._animating = false;
           inner.removeEventListener('animationend', onEnd);
-            // reflect new flipped state in pager UI
-            updatePager();
+            // pager removed — no update needed
         };
         inner.addEventListener('animationend', onEnd);
       }
@@ -594,7 +569,7 @@
     });
 
     // initial layout
-    initPager();
+    // pager feature removed
     requestAnimationFrame(() => updateCards());
 
     // Next page button handler
